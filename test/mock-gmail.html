@@ -19,7 +19,13 @@ const rows=[
  ['GitHub','notifications@github.com','[repo] New comment on your pull request','Someone commented.','Fri, Oct 9, 2026, 8:30 AM',0,'t8'],
  ['Landlord, me','alex@example.com','Re: Repair request','Thanks, I will send photos tomorrow.','Sat, Oct 3, 2026, 11:00 AM',0,'t9','landlord@home.com']
 ];
-document.getElementById('rows').innerHTML=rows.map(r=>{
+const PAGE=50, all=rows.slice();
+if(location.search.includes('big')){const T=[['Writer','w%@substack.com','Essay #','A short essay.'],['GitHub','notifications@github.com','[repo] Comment #','Someone commented.'],['Billing','billing@shop%.com','Your bill is ready #','Amount due.'],['Person ','p%@gmail.com','Hello #','Can we talk?']];
+for(let i=0;i<120;i++){const t=T[i%4];all.push([t[0]+(i%4===3?i:''),t[1].replace('%',i%4===3?i:i%6),t[2]+i,t[3],'Oct '+(1+i%9)+', 2026, 9:00 AM',i%3===0?1:0,'g'+i]);}}
+function render(){const m=location.hash.match(/\/p(\d+)$/),p=m?+m[1]:1;document.getElementById('rows').innerHTML=all.slice((p-1)*PAGE,p*PAGE).map(row).join('')}
+window.addEventListener('hashchange',()=>setTimeout(render,80));
+function row(r){
  const sp = r[7] ? `<span class="zF" email="${r[7]}" name="${r[0].split(',')[0]}">${r[0].split(',')[0]}</span>, <span class="zF" email="${r[1]}" name="me">me</span>` : `<span class="zF" email="${r[1]}" name="${r[0]}">${r[0]}</span>`;
- return `<tr class="zA${r[5]?' zE':''}"><td class="yX xY"><div class="yW">${sp}</div></td><td class="xY a4W"><div class="xS"><div class="xT"><div class="y6"><span class="bqe"><span class="bog" data-legacy-thread-id="${r[6]}">${r[2]}</span></span></div><span class="y2"> - ${r[3]}</span></div></div></td><td class="xW xY"><span title="${r[4]}">${r[4].slice(5,11)}</span></td></tr>`}).join('');
+ return `<tr class="zA${r[5]?' zE':''}"><td class="yX xY"><div class="yW">${sp}</div></td><td class="xY a4W"><div class="xS"><div class="xT"><div class="y6"><span class="bqe"><span class="bog" data-legacy-thread-id="${r[6]}">${r[2]}</span></span></div><span class="y2"> - ${r[3]}</span></div></div></td><td class="xW xY"><span title="${r[4]}">${r[4].slice(5,11)}</span></td></tr>`}
+render();
 </script></body></html>

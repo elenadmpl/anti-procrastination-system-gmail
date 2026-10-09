@@ -2,11 +2,16 @@
 
 A Chrome extension that adds a clean interface **inside Gmail itself**: colored labels on every email, a filter bar above your list (Needs reply · 2-minute · Waiting on others · Newsletters · Receipts · Notifications), and a Focus drawer that shows one email at a time. It runs entirely in your browser. No Google permissions, no account linking, nothing is uploaded.
 
-## Install in Chrome (2 minutes)
+## Install in Chrome or Brave (2 minutes)
 1. Download `declutter-extension.zip` from this repo and unzip it (or use the `extension/` folder directly).
-2. In Chrome open `chrome://extensions` and switch on **Developer mode** (top right).
-3. Click **Load unpacked** and choose the unzipped folder.
+2. Open `chrome://extensions` (Chrome) or `brave://extensions` (Brave) and switch on **Developer mode** (top right).
+3. Click **Load unpacked** and choose the unzipped folder. Edge, Opera and Arc work the same way.
 4. Open (or reload) Gmail. You will see the filter bar above your inbox and a blue **Focus** button at the bottom right.
+
+## See your whole inbox (not just 50 at a time)
+Click **Open board ⤢** in the filter bar, then **Scan whole inbox**. Declutter walks through Gmail's pages by itself (page 1, 2, 3 …) and remembers every email it sees, so Focus, Newsletters and the board cover the entire inbox. About 2 to 3 seconds per page of 50. Press Stop any time. Re-scan whenever you like; results are saved in your browser.
+
+The board shows one panel per category (Needs reply, Waiting on others, Newsletters, Receipts & bills, Notifications) with search, an age filter (3+, 7+, 30+ days) and an unread-only switch. Newsletters and notifications are grouped by sender, with Unsubscribe and Hide all.
 
 ## How it works
 It reads the email rows Gmail already shows on screen (sender, subject, snippet, date) and sorts them with the rules in `extension/logic.js`: a real person you have not answered, a thread where you spoke last, bulk senders and newsletters, bills and receipts, and automated notifications. It works on whatever list is open, so use it on Inbox, Promotions or Updates, and set Gmail to show 100 per page for wider coverage.
