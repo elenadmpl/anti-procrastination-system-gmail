@@ -33,6 +33,7 @@ assert.strictEqual(C({ ...base, fromEmail: 'x@y.com', subject: 'Sale', gmailCate
 assert.strictEqual(C({ ...base, fromEmail: 'friend@gmail.com', subject: 'Invoice attached' }).category, 'reply'); // humans stay humans
 
 // regressions found on a real mailbox
+assert.strictEqual(C({ ...base, fromEmail: 'promo@fashiondeals.com', subject: '50% off', gmailCategory: undefined }).category, 'newsletter');
 assert.strictEqual(C({ ...base, fromEmail: 'ruben@substack.com', subject: 'Certified.', gmailCategory: 'updates' }).category, 'newsletter');
 assert.strictEqual(C({ ...base, fromEmail: 'accountspayable@bdainc.com', subject: 'AP Validated and Unpaid Report', gmailCategory: 'personal' }).category, 'receipt');
 assert.strictEqual(C({ ...base, fromEmail: 'no-reply@otter.ai', subject: 'Meeting Summary', gmailCategory: 'updates' }).category, 'notification');

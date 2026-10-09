@@ -1,4 +1,27 @@
-# 📬 Inbox Coach – anti-procrastination system for Gmail
+# 📬 Declutter for Gmail
+
+A Chrome extension that adds a clean interface **inside Gmail itself**: colored labels on every email, a filter bar above your list (Needs reply · 2-minute · Waiting on others · Newsletters · Receipts · Notifications), and a Focus drawer that shows one email at a time. It runs entirely in your browser. No Google permissions, no account linking, nothing is uploaded.
+
+## Install in Chrome (2 minutes)
+1. Download `declutter-extension.zip` from this repo and unzip it (or use the `extension/` folder directly).
+2. In Chrome open `chrome://extensions` and switch on **Developer mode** (top right).
+3. Click **Load unpacked** and choose the unzipped folder.
+4. Open (or reload) Gmail. You will see the filter bar above your inbox and a blue **Focus** button at the bottom right.
+
+## How it works
+It reads the email rows Gmail already shows on screen (sender, subject, snippet, date) and sorts them with the rules in `extension/logic.js`: a real person you have not answered, a thread where you spoke last, bulk senders and newsletters, bills and receipts, and automated notifications. It works on whatever list is open, so use it on Inbox, Promotions or Updates, and set Gmail to show 100 per page for wider coverage.
+
+Limits: it only sees the emails loaded on screen. "Done" and "Snooze" hide an email in Declutter, they do not archive it in Gmail. Unsubscribe opens the newest email so you can use Gmail's own Unsubscribe link. Gmail changes its internal class names now and then; all selectors are in one object (`ROW_SEL`) at the top of `extension/content.js`.
+
+## Develop
+`node test/logic.test.js` (sorting rules) and `node test/extension.test.js` (loads the extension into a fake Gmail page, needs Playwright).
+`extension/logic.js` is a copy of `src/Logic.gs`: run `cp src/Logic.gs extension/logic.js` after editing.
+
+---
+
+# Alternative: Google Apps Script version (sidebar add-on)
+A plainer sidebar plus a web dashboard that can also unsubscribe automatically and label mail in Gmail. Setup is longer; see below.
+
 
 Runs inside **your own Google account** (Google Apps Script). Nothing is sent to any third-party server.
 

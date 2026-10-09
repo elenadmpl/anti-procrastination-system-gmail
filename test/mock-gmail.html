@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Inbox (3) - alex@example.com - Mail</title>
+<style>body{margin:0;font:14px Roboto,Arial,sans-serif;background:#f6f8fc;color:#1f1f1f}
+.top{height:64px;display:flex;align-items:center;padding:0 24px;font-size:22px;color:#5f6368}
+div[role=main]{margin:0 16px 0 220px;background:#fff;border-radius:16px;min-height:600px}
+table{width:100%;border-collapse:collapse} td{padding:8px 6px;border-bottom:1px solid #eee}
+tr.zE{font-weight:700;background:#f2f6fc} .yW{width:190px} .y2{font-weight:400;color:#5f6368}
+.tabs{display:flex;gap:24px;padding:0 16px;border-bottom:1px solid #eee}[role=tab]{padding:12px 4px;color:#5f6368}[aria-selected=true]{color:#0b57d0;border-bottom:3px solid #0b57d0}</style></head>
+<body><div class="top">Mail (mock for testing – fictional emails)</div>
+<div role="main"><div class="tabs"><div role="tab" aria-selected="true">Primary</div><div role="tab">Promotions</div></div><table><tbody id="rows"></tbody></table></div>
+<script>
+const rows=[
+ ['Maria Papadaki','maria@studio.gr','Contract draft – can you sign by Friday?','Hi! Attaching the final draft. Could you review and sign before Friday so we can start? It is urgent.','Fri, Oct 2, 2026, 9:00 AM',1,'t1'],
+ ['Nikos','nikos@gmail.com','Dinner Saturday?','Are you free around 8?','Thu, Oct 8, 2026, 6:10 PM',1,'t2'],
+ ['Clara','clara@acme.io','Quick question about the proposal','Do you have the revised pricing? We can finalize next week if so.','Wed, Sep 30, 2026, 2:00 PM',0,'t3'],
+ ['Tech Weekly','news@techweekly.io','This week in tech','The 10 stories you missed, plus a deep dive on chips.','Fri, Oct 9, 2026, 7:00 AM',1,'t4'],
+ ['Fashion Deals','promo@fashiondeals.com','50% off today only!','Shop the sale before midnight.','Fri, Oct 9, 2026, 5:00 AM',1,'t5'],
+ ['Substack Writer','writer@substack.com','How I plan my week','A short essay.','Thu, Oct 8, 2026, 5:00 AM',0,'t6'],
+ ['Vodafone','billing@vodafone.gr','Your bill is ready','Amount due: 32.10 EUR','Wed, Oct 7, 2026, 8:00 AM',0,'t7'],
+ ['GitHub','notifications@github.com','[repo] New comment on your pull request','Someone commented.','Fri, Oct 9, 2026, 8:30 AM',0,'t8'],
+ ['Landlord, me','alex@example.com','Re: Repair request','Thanks, I will send photos tomorrow.','Sat, Oct 3, 2026, 11:00 AM',0,'t9','landlord@home.com']
+];
+document.getElementById('rows').innerHTML=rows.map(r=>{
+ const sp = r[7] ? `<span class="zF" email="${r[7]}" name="${r[0].split(',')[0]}">${r[0].split(',')[0]}</span>, <span class="zF" email="${r[1]}" name="me">me</span>` : `<span class="zF" email="${r[1]}" name="${r[0]}">${r[0]}</span>`;
+ return `<tr class="zA${r[5]?' zE':''}"><td class="yX xY"><div class="yW">${sp}</div></td><td class="xY a4W"><div class="xS"><div class="xT"><div class="y6"><span class="bqe"><span class="bog" data-legacy-thread-id="${r[6]}">${r[2]}</span></span></div><span class="y2"> - ${r[3]}</span></div></div></td><td class="xW xY"><span title="${r[4]}">${r[4].slice(5,11)}</span></td></tr>`}).join('');
+</script></body></html>
