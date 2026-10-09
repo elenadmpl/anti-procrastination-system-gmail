@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inbox Coach</title>
+<style>
+  :root {
+    --bg:#f6f7fb; --card:#fff; --text:#1d2433; --muted:#6b7385; --line:#e5e8f0;
+    --brand:#4f46e5; --brand-ink:#fff; --ok:#16a34a; --warn:#d97706; --bad:#dc2626; --chip:#eef0f7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1219; --card:#171b25; --text:#e8ebf3; --muted:#9aa3b5; --line:#262c3a; --brand:#818cf8; --brand-ink:#0f1219; --chip:#222838; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:16px 20px; }
+  h1 { font-size:20px; margin:0; letter-spacing:-.01em; }
+  .stats { display:flex; gap:8px; flex-wrap:wrap; }
+  .pill { background:var(--card); border:1px solid var(--line); border-radius:999px; padding:6px 12px; font-size:13px; }
+  .pill b { color:var(--brand); }
+  nav { display:flex; gap:6px; padding:0 20px 12px; overflow-x:auto; }
+  nav button { white-space:nowrap; border:1px solid var(--line); background:var(--card); color:var(--text); border-radius:999px; padding:8px 14px; cursor:pointer; font:inherit; }
+  nav button.on { background:var(--brand); color:var(--brand-ink); border-color:var(--brand); }
+  nav .n { opacity:.7; margin-left:6px; font-size:12px; }
+  main { padding:0 20px 80px; max-width:900px; margin:0 auto; }
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin:4px 0 14px; align-items:center; }
+  .muted { color:var(--muted); font-size:13px; }
+  button.btn { border:1px solid var(--line); background:var(--card); color:var(--text); border-radius:8px; padding:7px 12px; cursor:pointer; font:inherit; font-size:13px; }
+  button.btn:hover { border-color:var(--brand); }
+  button.btn.primary { background:var(--brand); color:var(--brand-ink); border-color:var(--brand); }
+  button.btn.ok { color:var(--ok); }
+  button:disabled { opacity:.5; cursor:default; }
+  .row { display:flex; gap:12px; align-items:flex-start; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:8px; }
+  .avatar { flex:none; width:36px; height:36px; border-radius:50%; background:var(--chip); display:grid; place-items:center; font-weight:600; color:var(--brand); }
+  .body { flex:1; min-width:0; }
+  .top { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
+  .from { font-weight:600; }
+  .subj { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .snip { color:var(--muted); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tag { font-size:11px; border-radius:6px; padding:1px 7px; background:var(--chip); color:var(--muted); }
+  .tag.age-hot { background:#fee2e2; color:#b91c1c; } .tag.age-warm { background:#ffedd5; color:#9a3412; }
+  .tag.urgent { background:var(--bad); color:#fff; } .tag.quick { background:#dcfce7; color:#166534; }
+  .acts { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .empty { text-align:center; padding:48px 12px; color:var(--muted); }
+  .empty .big { font-size:40px; }
+  .focus { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:28px; text-align:center; }
+  .focus h2 { margin:6px 0 4px; font-size:22px; } .focus .snip { white-space:normal; margin:10px auto 18px; max-width:560px; font-size:15px; }
+  .focus .acts { justify-content:center; } .bar { height:6px; background:var(--chip); border-radius:99px; overflow:hidden; margin:0 0 16px; }
+  .bar i { display:block; height:100%; background:var(--brand); transition:width .3s; }
+  .status { font-size:12px; margin-left:auto; } .status.ok { color:var(--ok); } .status.bad { color:var(--bad); }
+  #toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:var(--text); color:var(--bg); padding:10px 16px; border-radius:10px; opacity:0; pointer-events:none; transition:opacity .2s; max-width:90vw; }
+  #toast.show { opacity:1; }
+  .loading { text-align:center; padding:60px; color:var(--muted); }
+  input[type=checkbox] { width:18px; height:18px; margin-top:8px; accent-color:var(--brand); }
+</style>
+</head>
+<body>
+<header>
+  <h1>📬 Inbox Coach</h1>
+  <div class="stats" id="stats"></div>
+</header>
+<nav id="tabs"></nav>
+<main id="view"><div class="loading">Scanning your inbox…</div></main>
+<div id="toast"></div>
+
+<script>
+const TABS = [
+  { id:'focus',        label:'🎯 Focus' },
+  { id:'reply',        label:'📨 Needs reply' },
+  { id:'quick',        label:'⚡ Quick wins' },
+  { id:'waiting',      label:'⏳ Waiting on others' },
+  { id:'unsub',        label:'📰 Unsubscribe' },
+  { id:'receipt',      label:'🧾 Receipts & bills' },
+  { id:'notification', label:'🔔 Notifications' }
+];
+let state = { data:null, tab:'focus', skipped:new Set(), focusStart:0, selected:new Set(), unsubStatus:{} };
+
+/* ---------- Server bridge (falls back to demo data outside Apps Script) ---------- */
+const DEMO = typeof google === 'undefined' || !google.script;
+function call(fn, ...args) {
+  if (!DEMO) return new Promise((ok, bad) => google.script.run.withSuccessHandler(ok).withFailureHandler(bad)[fn](...args));
+  return demoCall(fn, ...args);
+}
+function demoCall(fn, ...args) {
+  return new Promise(res => setTimeout(() => {
+    if (fn === 'apGetDashboard') return res(demoData());
+    if (fn === 'apMarkDone' || fn === 'apSnooze') { state.data.stats.doneToday++; return res(state.data.stats); }
+    if (fn === 'apUnsubscribe') return res({ email:args[0], status: args[0].includes('promo') ? 'manual' : 'unsubscribed', openUrl:'#' });
+    if (fn === 'apSyncLabels') return res({ labelled: state.data.items.length });
+    res(true);
+  }, 250));
+}
+function demoData() {
+  const d = n => new Date(Date.now() - n * 86400000).toISOString();
+  const mk = (i, o) => Object.assign({ id:'t'+i, messages:1, unread:false, urgent:false, quick:false, priority:0, unsubMethod:'none', url:'#', snippet:'' }, o);
+  const items = [
+    mk(1,{category:'reply',fromName:'Maria Papadaki',fromEmail:'maria@studio.gr',subject:'Contract draft – can you sign by Friday?',snippet:'Hi! Attaching the final draft. Could you review and sign before Friday so we can start?',daysAgo:5,date:d(5),urgent:true,unread:true,priority:80}),
+    mk(2,{category:'reply',fromName:'Nikos',fromEmail:'nikos@gmail.com',subject:'Dinner Saturday?',snippet:'Are you free around 8?',daysAgo:2,date:d(2),quick:true,priority:30}),
+    mk(3,{category:'reply',fromName:'Clara from Acme',fromEmail:'clara@acme.io',subject:'Quick question about the proposal',snippet:'Do you have the revised pricing? We can finalize next week if so.',daysAgo:8,date:d(8),priority:45}),
+    mk(4,{category:'reply',fromName:'Dr. Alexiou',fromEmail:'office@clinic.gr',subject:'Appointment confirmation',snippet:'Please confirm your slot.',daysAgo:1,date:d(1),quick:true,priority:20}),
+    mk(5,{category:'waiting',fromName:'Landlord',fromEmail:'landlord@x.com',subject:'Re: Repair request',snippet:'',daysAgo:6,date:d(6),priority:30}),
+    mk(6,{category:'waiting',fromName:'Design agency',fromEmail:'hi@agency.co',subject:'Logo files',snippet:'',daysAgo:3,date:d(3),priority:15}),
+    mk(7,{category:'newsletter',fromName:'Fashion Deals',fromEmail:'promo@fashiondeals.com',subject:'50% off today only!',daysAgo:0,date:d(0),unsubMethod:'link'}),
+    mk(8,{category:'newsletter',fromName:'Fashion Deals',fromEmail:'promo@fashiondeals.com',subject:'New arrivals',daysAgo:2,date:d(2),unsubMethod:'link'}),
+    mk(9,{category:'newsletter',fromName:'Medium Digest',fromEmail:'noreply@medium.com',subject:'Stories for you',daysAgo:1,date:d(1),unsubMethod:'one-click'}),
+    mk(10,{category:'newsletter',fromName:'Tech Weekly',fromEmail:'news@techweekly.io',subject:'This week in tech',daysAgo:3,date:d(3),unsubMethod:'mailto'}),
+    mk(11,{category:'newsletter',fromName:'Tech Weekly',fromEmail:'news@techweekly.io',subject:'Last week in tech',daysAgo:10,date:d(10),unsubMethod:'mailto'}),
+    mk(12,{category:'receipt',fromName:'Amazon',fromEmail:'orders@amazon.com',subject:'Your order has shipped',daysAgo:1,date:d(1)}),
+    mk(13,{category:'receipt',fromName:'Vodafone',fromEmail:'billing@vodafone.gr',subject:'Your bill is ready',daysAgo:4,date:d(4)}),
+    mk(14,{category:'notification',fromName:'GitHub',fromEmail:'notifications@github.com',subject:'[repo] New comment on PR',daysAgo:0,date:d(0)}),
+    mk(15,{category:'notification',fromName:'LinkedIn',fromEmail:'notifications@linkedin.com',subject:'You appeared in 5 searches',daysAgo:2,date:d(2)})
+  ];
+  return { items, senders: groupSenders(items), stats:{doneToday:3,streak:4}, generatedAt:new Date().toISOString(), dashboardUrl:'', digestOn:false };
+}
+/* tiny copy of server-side groupSenders for demo mode only */
+function groupSenders(items){const m={},r={'one-click':3,mailto:2,link:1,none:0};items.forEach(i=>{if(i.category!=='newsletter')return;const g=m[i.fromEmail]||(m[i.fromEmail]={email:i.fromEmail,name:i.fromName,count:0,lastDate:i.date,method:'none'});g.count++;if(i.date>g.lastDate)g.lastDate=i.date;if(r[i.unsubMethod]>r[g.method])g.method=i.unsubMethod});return Object.values(m).sort((a,b)=>b.count-a.count)}
+
+/* ---------- Helpers ---------- */
+const $ = s => document.querySelector(s);
+const el = (tag, props = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v == null) continue;
+    if (k === 'class') n.className = v; else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else if (k === 'checked') n.checked = v; else n.setAttribute(k, v);
+  }
+  kids.flat().forEach(c => n.append(c instanceof Node ? c : document.createTextNode(c ?? '')));
+  return n;
+};
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2600); }
+const items = cat => state.data.items.filter(i => i.category === cat);
+const lists = {
+  reply: () => items('reply'), quick: () => items('reply').filter(i => i.quick),
+  waiting: () => items('waiting'), receipt: () => items('receipt'), notification: () => items('notification')
+};
+function ageTag(i) { return el('span', { class: 'tag ' + (i.daysAgo >= 5 ? 'age-hot' : i.daysAgo >= 2 ? 'age-warm' : '') }, i.daysAgo === 0 ? 'today' : i.daysAgo + 'd ago'); }
+
+/* ---------- Actions ---------- */
+async function act(fn, item, ...args) {
+  state.data.items = state.data.items.filter(i => i.id !== item.id);
+  render();
+  try { state.data.stats = await call(fn, item.id, ...args); toast(fn === 'apMarkDone' ? 'Done ✅  Keep going!' : 'Snoozed 😴'); renderStats(); }
+  catch (e) { toast('Something failed – reloading'); load(true); }
+}
+async function load(force) {
+  $('#view').replaceChildren(el('div', { class: 'loading' }, 'Scanning your inbox…'));
+  try { state.data = await call('apGetDashboard', !!force); state.focusStart = state.data.items.filter(i => i.category === 'reply').length; render(); }
+  catch (e) { $('#view').replaceChildren(el('div', { class: 'empty' }, 'Could not load: ' + (e.message || e))); }
+}
+
+/* ---------- Rendering ---------- */
+function renderStats() {
+  const s = state.data.stats;
+  $('#stats').replaceChildren(
+    el('span', { class: 'pill' }, '✅ Done today ', el('b', {}, s.doneToday)),
+    el('span', { class: 'pill' }, '🔥 Streak ', el('b', {}, s.streak + 'd')),
+    el('span', { class: 'pill' }, '📨 To reply ', el('b', {}, items('reply').length)));
+}
+function renderTabs() {
+  const count = { focus: items('reply').length, reply: items('reply').length, quick: lists.quick().length, waiting: items('waiting').length,
+    unsub: state.data.senders.length, receipt: items('receipt').length, notification: items('notification').length };
+  $('#tabs').replaceChildren(...TABS.map(t => el('button', { class: state.tab === t.id ? 'on' : '', onclick: () => { state.tab = t.id; render(); } },
+    t.label, el('span', { class: 'n' }, count[t.id]))));
+}
+function itemRow(i) {
+  const acts = el('div', { class: 'acts' },
+    el('a', { href: i.url, target: '_blank', rel: 'noopener' }, el('button', { class: 'btn primary' }, i.category === 'waiting' ? 'Open / nudge' : 'Open & reply')),
+    el('button', { class: 'btn ok', onclick: () => act('apMarkDone', i) }, '✓ Done'),
+    ...(i.category === 'waiting' ? [] : [1, 3, 7].map(d => el('button', { class: 'btn', onclick: () => act('apSnooze', i, d) }, '😴 ' + d + 'd'))));
+  return el('div', { class: 'row' },
+    el('div', { class: 'avatar' }, (i.fromName || '?')[0].toUpperCase()),
+    el('div', { class: 'body' },
+      el('div', { class: 'top' }, el('span', { class: 'from' }, i.fromName), ageTag(i),
+        i.urgent ? el('span', { class: 'tag urgent' }, 'urgent') : '', i.quick ? el('span', { class: 'tag quick' }, '⚡ 2-min') : ''),
+      el('div', { class: 'subj' }, i.subject), i.snippet ? el('div', { class: 'snip' }, i.snippet) : '', acts));
+}
+function renderList(list, emptyMsg) {
+  if (!list.length) return el('div', { class: 'empty' }, el('div', { class: 'big' }, '🎉'), emptyMsg);
+  return el('div', {}, list.map(itemRow));
+}
+function renderFocus() {
+  const queue = items('reply').filter(i => !state.skipped.has(i.id));
+  const total = Math.max(state.focusStart, 1), left = items('reply').length;
+  const bar = el('div', { class: 'bar' }, el('i', { style: `width:${Math.round(100 * (total - left) / total)}%` }));
+  if (!queue.length) return el('div', {}, bar, el('div', { class: 'empty' }, el('div', { class: 'big' }, '🎉'),
+    left ? 'You skipped the rest – they will be back next time.' : 'Nothing left to reply to. You did it!'));
+  const i = queue[0];
+  return el('div', {}, bar, el('div', { class: 'focus' },
+    el('div', { class: 'muted' }, `Just this one. ${left} left.`),
+    el('h2', {}, i.subject), el('div', {}, i.fromName, ' · ', ageTag(i), i.urgent ? el('span', { class: 'tag urgent' }, ' urgent') : ''),
+    el('div', { class: 'snip' }, i.snippet || ''),
+    el('div', { class: 'acts' },
+      el('a', { href: i.url, target: '_blank', rel: 'noopener' }, el('button', { class: 'btn primary' }, 'Open & reply')),
+      el('button', { class: 'btn ok', onclick: () => act('apMarkDone', i) }, '✓ Done'),
+      el('button', { class: 'btn', onclick: () => act('apSnooze', i, 1) }, '😴 Tomorrow'),
+      el('button', { class: 'btn', onclick: () => act('apSnooze', i, 7) }, '😴 Next week'),
+      el('button', { class: 'btn', onclick: () => { state.skipped.add(i.id); render(); } }, 'Skip'))));
+}
+function renderUnsub() {
+  const senders = state.data.senders;
+  if (!senders.length) return el('div', { class: 'empty' }, el('div', { class: 'big' }, '🧹'), 'No newsletters found in the last 60 days.');
+  const label = { 'one-click': 'one-click', mailto: 'by email', link: 'needs a click', none: 'no link – mute' };
+  const runOne = async s => {
+    state.unsubStatus[s.email] = '…'; render();
+    try {
+      const r = await call('apUnsubscribe', s.email);
+      state.unsubStatus[s.email] = { unsubscribed: '✓ unsubscribed', muted: '✓ archived & muted', manual: '→ confirm on the page that opened', failed: '✗ failed – try manually' }[r.status];
+      if (r.openUrl && !DEMO) window.open(r.openUrl, '_blank', 'noopener');
+      if (r.status !== 'failed') { state.selected.delete(s.email); }
+    } catch (e) { state.unsubStatus[s.email] = '✗ error'; }
+    render();
+  };
+  const bulk = async () => { for (const s of senders.filter(x => state.selected.has(x.email))) await runOne(s); };
+  const all = senders.every(s => state.selected.has(s.email));
+  const bar = el('div', { class: 'toolbar' },
+    el('button', { class: 'btn', onclick: () => { senders.forEach(s => all ? state.selected.delete(s.email) : state.selected.add(s.email)); render(); } }, all ? 'Select none' : 'Select all'),
+    el('button', { class: 'btn primary', disabled: state.selected.size ? null : 'disabled', onclick: bulk }, `Unsubscribe selected (${state.selected.size})`),
+    el('span', { class: 'muted' }, 'Unsubscribes, archives what is in your inbox, and filters future mail out of it.'));
+  const rows = senders.map(s => {
+    const st = state.unsubStatus[s.email];
+    return el('div', { class: 'row' },
+      el('input', { type: 'checkbox', checked: state.selected.has(s.email), onchange: e => { e.target.checked ? state.selected.add(s.email) : state.selected.delete(s.email); render(); } }),
+      el('div', { class: 'body' }, el('div', { class: 'top' }, el('span', { class: 'from' }, s.name), el('span', { class: 'muted' }, s.email),
+        el('span', { class: 'tag' }, s.count + ' email' + (s.count > 1 ? 's' : '')), el('span', { class: 'tag' }, label[s.method])),
+        st ? el('div', { class: 'status ' + (st.startsWith('✓') ? 'ok' : st.startsWith('✗') ? 'bad' : '') }, st) : ''),
+      el('button', { class: 'btn', disabled: st === '…' ? 'disabled' : null, onclick: () => runOne(s) }, 'Unsubscribe'));
+  });
+  return el('div', {}, bar, rows);
+}
+function render() {
+  if (!state.data) return;
+  renderStats(); renderTabs();
+  const toolbar = el('div', { class: 'toolbar' },
+    el('button', { class: 'btn', onclick: () => load(true) }, '↻ Refresh'),
+    el('button', { class: 'btn', onclick: async () => { toast('Labelling…'); const r = await call('apSyncLabels'); toast(`Labelled ${r.labelled} threads under AP/ in Gmail`); } }, '🏷 Sync labels to Gmail'),
+    el('button', { class: 'btn', onclick: async () => { await call(state.data.digestOn ? 'apRemoveTriggers' : 'apInstallTriggers'); state.data.digestOn = !state.data.digestOn; toast(state.data.digestOn ? 'Daily 8am digest on' : 'Daily digest off'); render(); } },
+      state.data.digestOn ? '🔕 Turn off daily digest' : '🔔 Daily 8am digest'),
+    el('span', { class: 'muted' }, 'Updated ' + new Date(state.data.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + (DEMO ? ' · demo data' : '')));
+  const body = { focus: renderFocus,
+    reply: () => renderList(lists.reply(), 'Nobody is waiting on you.'),
+    quick: () => renderList(lists.quick(), 'No quick wins right now.'),
+    waiting: () => renderList(lists.waiting(), 'Nobody owes you a reply (that you know of).'),
+    unsub: renderUnsub,
+    receipt: () => renderList(lists.receipt(), 'No receipts or bills.'),
+    notification: () => renderList(lists.notification(), 'No notifications.') }[state.tab]();
+  $('#view').replaceChildren(toolbar, body);
+}
+load(false);
+</script>
+</body>
+</html>
