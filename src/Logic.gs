@@ -12,7 +12,12 @@ var AP_CATEGORY_META = {
 };
 
 var AP_RE_AUTOMATED_SENDER = /(^|[._+-])(no-?reply|do-?not-?reply|notifications?|mailer-daemon|postmaster|newsletter|marketing|alerts?|digest|bounce|automated)([._+-]|@)/i;
-var AP_RE_RECEIPT = /\b(receipt|invoice|your order|order (confirmation|#|number|shipped)|payment (received|confirmation|failed)|statement is|billing|bill is ready|subscription (renewal|renewed)|refund|booking confirmation|e-?ticket|itinerary)\b/i;
+// Role mailboxes (billing@, support@...) are never "a person waiting on you".
+var AP_RE_ROLE_SENDER = /^(accounts?-?payable|accounts?-?receivable|billing|invoices?|receipts?|orders?|support|helpdesk|team|info)@/i;
+// Bulk-mail platforms and newsletter-style mailboxes: fallback when no List-Unsubscribe header is visible.
+var AP_RE_BULK_SENDER = /(@|\.)(substack\.com|mailchimp(app)?\.com|beehiiv\.com|convertkit|list-manage|sendgrid|mailgun|constantcontact|hubspot|medium\.com)$|^(news|newsletter|newsletters|digest|hello|marketing|mail|updates|weekly)@/i;
+var AP_RE_REACTION = /(reacted via gmail|αντέδρασε μέσω gmail)/i;
+var AP_RE_RECEIPT = /\b(receipt|invoice|your order|order (confirmation|#|number|shipped)|payment (received|confirmation|failed)|unpaid|statement is|billing|bill is ready|subscription (renewal|renewed)|refund|booking confirmation|e-?ticket|itinerary)\b/i;
 var AP_RE_URGENT = /\b(urgent|asap|deadline|due (today|tomorrow|soon|by)|action required|final notice|expires?( today| soon)?|by (eod|end of day)|time[- ]sensitive|overdue|last chance to respond)\b/i;
 
 /** '"Jane Doe" <jane@x.com>' -> {name, email} (email lower-cased). */
@@ -81,11 +86,13 @@ function classifyThread(t) {
   var autoCats = ['promotions', 'social', 'updates', 'forums'];
   var automated = !!t.hasListUnsub ||
     AP_RE_AUTOMATED_SENDER.test(t.fromEmail || '') ||
+    AP_RE_ROLE_SENDER.test(t.fromEmail || '') ||
+    AP_RE_BULK_SENDER.test(t.fromEmail || '') ||
     autoCats.indexOf(t.gmailCategory) >= 0;
 
   if (automated) {
     if (AP_RE_RECEIPT.test(subject)) res.category = 'receipt';
-    else if (t.hasListUnsub || t.gmailCategory === 'promotions' || t.gmailCategory === 'forums') res.category = 'newsletter';
+    else if (t.hasListUnsub || AP_RE_BULK_SENDER.test(t.fromEmail || '') || t.gmailCategory === 'promotions' || t.gmailCategory === 'forums') res.category = 'newsletter';
     else res.category = 'notification';
     return res;
   }
@@ -137,3 +144,6 @@ function computeStreak(daysMap, todayKey) {
   }
   return streak;
 }
+
+/** Gmail "reacted with an emoji" messages are not real replies. */
+function isReaction(text) { return AP_RE_REACTION.test(String(text || '')); }

@@ -32,6 +32,11 @@ assert.strictEqual(C({ ...base, fromEmail: 'notifications@github.com', subject: 
 assert.strictEqual(C({ ...base, fromEmail: 'x@y.com', subject: 'Sale', gmailCategory: 'promotions' }).category, 'newsletter');
 assert.strictEqual(C({ ...base, fromEmail: 'friend@gmail.com', subject: 'Invoice attached' }).category, 'reply'); // humans stay humans
 
+// regressions found on a real mailbox
+assert.strictEqual(C({ ...base, fromEmail: 'ruben@substack.com', subject: 'Certified.', gmailCategory: 'updates' }).category, 'newsletter');
+assert.strictEqual(C({ ...base, fromEmail: 'accountspayable@bdainc.com', subject: 'AP Validated and Unpaid Report', gmailCategory: 'personal' }).category, 'receipt');
+assert.strictEqual(C({ ...base, fromEmail: 'no-reply@otter.ai', subject: 'Meeting Summary', gmailCategory: 'updates' }).category, 'notification');
+assert.ok(L('isReaction')('😊 Ο χρήστης Elena αντέδρασε μέσω Gmail') && L('isReaction')('Elena reacted via Gmail') && !L('isReaction')('thanks!'));
 const g = L('groupSenders')([
   { category: 'newsletter', fromEmail: 'a@x.com', fromName: 'A', date: '2026-01-01', unsubMethod: 'link' },
   { category: 'newsletter', fromEmail: 'a@x.com', fromName: 'A', date: '2026-02-01', unsubMethod: 'one-click' },

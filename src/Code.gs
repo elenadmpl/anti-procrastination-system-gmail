@@ -59,6 +59,7 @@ function scanMailbox_() {
     var msgs = all[i];
     if (!msgs || !msgs.length) return;
     var last = msgs[msgs.length - 1];
+    for (var k = msgs.length - 1; k > 0 && isReaction(msgs[k].getPlainBody().slice(0, 200)); k--) last = msgs[k - 1];
     var from = parseAddress(last.getFrom());
     var lastFromMe = me.indexOf(from.email) >= 0;
     var id = thread.getId();
