@@ -55,6 +55,18 @@ const X = p => fs.readFileSync(path.join(__dirname, '..', 'extension', p), 'utf8
   await q.selectOption('#dc-age', '7');
   await q.waitForTimeout(100);
   await q.screenshot({ path: path.join(dir, 'ext-board.png') });
+  // whole-mailbox search through Gmail's own search, across result pages
+  await q.selectOption('#dc-age', '0');
+  await q.fill('#dc-q', 'essay');
+  await q.click('#dc-board-head .dc-btn:has-text("Search all mail")');
+  await q.waitForSelector('.dc-results .dc-item', { timeout: 30000 });
+  await q.waitForFunction(() => !document.querySelector('.dc-status').textContent.startsWith('Searching'), null, { timeout: 30000 });
+  const found = Number(await q.textContent('.dc-results header .dc-n'));
+  assert.ok(found >= 30, 'search should find every matching email, got ' + found);
+  assert.match(await q.textContent('.dc-status'), /129 emails known/); // search must not pollute the inbox archive
+  await q.screenshot({ path: path.join(dir, 'ext-search.png') });
+  await q.click('.dc-results .dc-btn:has-text("Clear")');
+  assert.strictEqual(await q.$$eval('.dc-panel[data-c="reply"]', n => n.length), 1);
   assert.deepStrictEqual(errs, []);
   console.log('extension tests passed'); await b.close();
 })().catch(e => { console.error(e); process.exit(1); });

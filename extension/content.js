@@ -24,7 +24,7 @@
   var scan = [];            // items for rows currently on screen (hold DOM refs)
   var archive = {};         // key -> plain item for every email seen or scanned (survives page changes)
   var scanning = null;      // {stop, count, page} while "Scan whole inbox" is running
-  var board = { q: '', age: 0, unread: false };
+  var board = { q: '', age: 0, unread: false, results: null };
   var MAX_PAGES = 200;
   var filter = 'all';
   var tab = 'focus';
@@ -115,8 +115,7 @@
     scan = [];
     rows.forEach(function (r) { var it = parseRow(r, me, gcat); if (it) scan.push(it); });
     scan.sort(function (a, b) { return b.priority - a.priority; });
-    scan.forEach(function (it) { archive[it.key] = plain(it); });
-    saveArchive();
+    if (inInboxView() && !(scanning && scanning.kind === 'search')) { scan.forEach(function (it) { archive[it.key] = plain(it); }); saveArchive(); }
     paint();
   }
   function plain(it) {
@@ -304,31 +303,50 @@
     }
     return false;
   }
-  async function scanAll() {
-    if (scanning) return;
-    scanning = { stop: false, count: 0, page: 0 };
-    var base = location.hash.replace(/^#/, '').replace(/\/p\d+$/, '') || 'inbox';
-    var fresh = {}, prevSig = '', firstSize = 0, completed = false;
+  function inInboxView() { var h = location.hash; return h === '' || /^#(inbox|category)/.test(h); }
+  /** Walk every page of a Gmail view/search (#base, #base/p2, ...) and collect plain items. */
+  async function walkPages(base, maxPages, progress) {
+    var out = {}, prevSig = '', firstSize = 0, completed = false;
     var me = myEmail(), gcat = activeGmailTab();
-    renderBoardHead();
-    for (var page = 1; page <= MAX_PAGES && !scanning.stop; page++) {
+    for (var page = 1; page <= maxPages && !(scanning && scanning.stop); page++) {
       location.hash = '#' + base + (page > 1 ? '/p' + page : '');
       if (!(await waitForPage(prevSig))) { completed = true; break; }
-      var rows = document.querySelectorAll(ROW_SEL.row), n = 0;
-      rows.forEach(function (r) { var it = parseRow(r, me, gcat); if (it) { fresh[it.key] = plain(it); n++; } });
+      var rows = document.querySelectorAll(ROW_SEL.row);
+      rows.forEach(function (r) { var it = parseRow(r, me, gcat); if (it) out[it.key] = plain(it); });
       prevSig = rowsSig();
       if (page === 1) firstSize = rows.length;
-      scanning.page = page; scanning.count = Object.keys(fresh).length;
-      renderBoardHead();
+      progress(page, Object.keys(out).length);
       if (rows.length < firstSize) { completed = true; break; }
     }
-    if (completed) archive = fresh;           // full pass is authoritative; a stopped pass only adds
-    else Object.keys(fresh).forEach(function (k) { archive[k] = fresh[k]; });
-    state.lastScan = { at: Date.now(), count: Object.keys(fresh).length, full: completed };
+    return { items: out, completed: completed };
+  }
+  async function scanAll() {
+    if (scanning) return;
+    scanning = { stop: false, count: 0, page: 0, kind: 'scan' };
+    var base = inInboxView() ? (location.hash.replace(/^#/, '').replace(/\/p\d+$/, '') || 'inbox') : 'inbox';
+    renderBoardHead();
+    var r = await walkPages(base, MAX_PAGES, function (page, count) { scanning.page = page; scanning.count = count; renderBoardHead(); });
+    if (r.completed) archive = r.items;       // full pass is authoritative; a stopped pass only adds
+    else Object.keys(r.items).forEach(function (k) { archive[k] = r.items[k]; });
+    state.lastScan = { at: Date.now(), count: Object.keys(r.items).length, full: r.completed };
     save(); saveArchive();
     scanning = null;
     location.hash = '#' + base;
-    setTimeout(function () { runScan(); renderBoardHead(); }, 600);
+    setTimeout(function () { runScan(); renderBoardHead(); renderPanels(); }, 600);
+  }
+  /** Search the WHOLE mailbox (incl. archived mail and message bodies) with Gmail's own search, all result pages. */
+  async function searchAll(q) {
+    q = String(q || '').trim();
+    if (!q || scanning) return;
+    var back = location.hash.replace(/^#/, '').replace(/\/p\d+$/, '') || 'inbox';
+    scanning = { stop: false, count: 0, page: 0, kind: 'search' };
+    board.results = { q: q, items: [], done: false };
+    renderBoardHead(); renderPanels();
+    var r = await walkPages('search/' + encodeURIComponent(q), 40, function (page, count) { scanning.page = page; scanning.count = count; renderBoardHead(); });
+    board.results = { q: q, items: Object.keys(r.items).map(function (k) { return r.items[k]; }).sort(function (a, b) { return b.ts - a.ts; }), done: r.completed, capped: !r.completed };
+    scanning = null;
+    location.hash = '#' + back;
+    renderBoardHead(); renderPanels();
   }
 
   /* ---------- board: full-screen panels ---------- */
@@ -358,14 +376,16 @@
   function renderBoardHead() {
     var h = document.getElementById('dc-board-head'); if (!h) return;
     var last = state.lastScan;
-    var status = scanning ? 'Scanning page ' + scanning.page + ' · ' + scanning.count + ' emails found…'
+    var status = scanning ? (scanning.kind === 'search' ? 'Searching all mail, page ' : 'Scanning page ') + scanning.page + ' · ' + scanning.count + ' emails found…'
       : last ? Object.keys(archive).length + ' emails known · ' + (last.full ? 'full scan ' : 'partial scan ') + new Date(last.at).toLocaleDateString()
       : Object.keys(archive).length + ' emails seen so far. Run a scan to see everything.';
     var q = document.getElementById('dc-q'), keep = q && document.activeElement === q;
     h.replaceChildren(
       el('h2', {}, 'Declutter board'),
       el('input', { id: 'dc-q', type: 'search', placeholder: 'Search sender, subject…', value: board.q, 'aria-label': 'Search',
-        oninput: function (e) { board.q = e.target.value; renderPanels(); } }),
+        oninput: function (e) { board.q = e.target.value; if (board.results && !e.target.value) board.results = null; renderPanels(); },
+        onkeydown: function (e) { if (e.key === 'Enter') searchAll(board.q); } }),
+      el('button', { class: 'dc-btn', disabled: scanning ? 'disabled' : null, onclick: function () { searchAll(board.q); } }, 'Search all mail'),
       el('select', { id: 'dc-age', 'aria-label': 'Age', onchange: function (e) { board.age = Number(e.target.value); renderPanels(); } },
         [[0, 'Any age'], [3, '3+ days old'], [7, '7+ days old'], [30, '30+ days old']].map(function (o) {
           return el('option', { value: o[0], selected: board.age === o[0] ? 'selected' : null }, o[1]); })),
@@ -379,6 +399,7 @@
   }
   function renderPanels() {
     var wrap = document.getElementById('dc-panels'); if (!wrap) return;
+    if (board.results) { wrap.replaceChildren(resultsPanel()); return; }
     wrap.replaceChildren.apply(wrap, PANELS.map(function (pn) {
       var items = pool(pn.id).filter(matches);
       var body;
@@ -398,6 +419,22 @@
         el('header', {}, el('span', { class: 'dc-dot', style: 'background:var(--dc-' + pn.id + ')' }), el('h3', {}, pn.title), el('span', { class: 'dc-n' }, items.length)),
         el('div', { class: 'dc-panel-body' }, body));
     }));
+  }
+  function resultsPanel() {
+    var r = board.results, items = r.items.filter(matches);
+    var body = !r.items.length && !r.done ? el('div', { class: 'dc-empty' }, 'Searching…')
+      : !items.length ? el('div', { class: 'dc-empty' }, 'No emails found for "' + r.q + '"')
+      : items.slice(0, 400).map(function (it) {
+        return el('div', { class: 'dc-item' },
+          el('div', { class: 'dc-item-main', onclick: function () { open(it); } },
+            el('b', {}, it.subject), el('small', {}, it.fromName + ' · ' + (age(it) ? age(it) + 'd ago' : 'today')),
+            it.snippet ? el('small', { class: 'dc-clip' }, it.snippet) : null),
+          el('div', { class: 'dc-item-side' }, el('span', { class: 'dc-badge', 'data-c': it.category }, BADGE[it.category])));
+      });
+    return el('section', { class: 'dc-panel dc-results', 'data-c': 'results' },
+      el('header', {}, el('h3', {}, 'Search results for "' + r.q + '"'), el('span', { class: 'dc-n' }, r.items.length + (r.capped ? '+' : '')),
+        el('button', { class: 'dc-btn', onclick: function () { board.results = null; board.q = ''; renderBoardHead(); renderPanels(); } }, 'Clear')),
+      el('div', { class: 'dc-panel-body' }, body));
   }
   function groupedRows(pn, items) {
     var map = {};

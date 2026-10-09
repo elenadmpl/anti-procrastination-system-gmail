@@ -11,6 +11,8 @@ A Chrome extension that adds a clean interface **inside Gmail itself**: colored 
 ## See your whole inbox (not just 50 at a time)
 Click **Open board ⤢** in the filter bar, then **Scan whole inbox**. Declutter walks through Gmail's pages by itself (page 1, 2, 3 …) and remembers every email it sees, so Focus, Newsletters and the board cover the entire inbox. About 2 to 3 seconds per page of 50. Press Stop any time. Re-scan whenever you like; results are saved in your browser.
 
+**Search the whole mailbox:** type in the board's search box and press Enter (or **Search all mail**). Declutter runs Gmail's own search, which covers every email including archived mail and message text, then reads all result pages into one list with category labels. The box also filters the panels instantly as you type.
+
 The board shows one panel per category (Needs reply, Waiting on others, Newsletters, Receipts & bills, Notifications) with search, an age filter (3+, 7+, 30+ days) and an unread-only switch. Newsletters and notifications are grouped by sender, with Unsubscribe and Hide all.
 
 ## How it works

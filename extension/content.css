@@ -109,3 +109,7 @@ tr.zA[data-dc-gone="1"] { display: none !important; }
 .dc-item-side .dc-badge { margin: 0; }
 .dc-panel .dc-empty { padding: 28px 8px; }
 @media (max-width: 700px) { #dc-panels { grid-auto-flow: row; grid-auto-columns: auto; overflow-y: auto; } .dc-panel { min-height: 320px; } }
+
+.dc-results { grid-column: 1 / -1; }
+.dc-results .dc-panel-body { max-width: 900px; width: 100%; margin: 0 auto; }
+.dc-clip { white-space: nowrap; }

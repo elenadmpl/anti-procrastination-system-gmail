@@ -22,7 +22,9 @@ const rows=[
 const PAGE=50, all=rows.slice();
 if(location.search.includes('big')){const T=[['Writer','w%@substack.com','Essay #','A short essay.'],['GitHub','notifications@github.com','[repo] Comment #','Someone commented.'],['Billing','billing@shop%.com','Your bill is ready #','Amount due.'],['Person ','p%@gmail.com','Hello #','Can we talk?']];
 for(let i=0;i<120;i++){const t=T[i%4];all.push([t[0]+(i%4===3?i:''),t[1].replace('%',i%4===3?i:i%6),t[2]+i,t[3],'Oct '+(1+i%9)+', 2026, 9:00 AM',i%3===0?1:0,'g'+i]);}}
-function render(){const m=location.hash.match(/\/p(\d+)$/),p=m?+m[1]:1;document.getElementById('rows').innerHTML=all.slice((p-1)*PAGE,p*PAGE).map(row).join('')}
+function render(){const m=location.hash.match(/\/p(\d+)$/),p=m?+m[1]:1;let list=all;
+const sm=location.hash.match(/^#search\/([^\/]+)/);if(sm){const q=decodeURIComponent(sm[1]).toLowerCase();list=all.filter(r=>(r[0]+r[1]+r[2]+r[3]).toLowerCase().includes(q))}
+document.getElementById('rows').innerHTML=list.slice((p-1)*PAGE,p*PAGE).map(row).join('')}
 window.addEventListener('hashchange',()=>setTimeout(render,80));
 function row(r){
  const sp = r[7] ? `<span class="zF" email="${r[7]}" name="${r[0].split(',')[0]}">${r[0].split(',')[0]}</span>, <span class="zF" email="${r[1]}" name="me">me</span>` : `<span class="zF" email="${r[1]}" name="${r[0]}">${r[0]}</span>`;
