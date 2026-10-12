@@ -16,9 +16,11 @@ const X = p => fs.readFileSync(path.join(__dirname, '..', 'extension', p), 'utf8
   assert.deepStrictEqual(cats, ['reply', 'reply', 'reply', 'newsletter', 'newsletter', 'newsletter', 'receipt', 'notification', 'waiting']);
   assert.strictEqual(await p.$$eval('.dc-badge', n => n.length) > 9, true);
   const boxes = await p.$$eval('tr.zA', rs => rs.map(r => r.getAttribute('data-dc-box')));
-  assert.deepStrictEqual(boxes, ['p1', '', '', 'p3', 'p2', 'p3', '', 'p3', '']);
+  assert.deepStrictEqual(boxes, ['p1', 'p4', 'p4', 'p3', 'p2', 'p3', 'p4', 'p3', '']);
   await p.click('.dc-chip:has-text("Important & urgent")');
   assert.strictEqual(await p.$$eval('tr.zA', rs => rs.filter(r => r.offsetParent).length), 1);
+  await p.click('.dc-chip:has-text("Important, not urgent")');
+  assert.strictEqual(await p.$$eval('tr.zA', rs => rs.filter(r => r.offsetParent).length), 3);
   await p.click('.dc-chip:has-text("Not important, urgent")');
   assert.strictEqual(await p.$$eval('tr.zA', rs => rs.filter(r => r.offsetParent).length), 1);
   await p.click('.dc-chip:has-text("Not important, not urgent")');
@@ -67,7 +69,7 @@ const X = p => fs.readFileSync(path.join(__dirname, '..', 'extension', p), 'utf8
   await q.click('.dc-seg-btn:has-text("By priority")');
   const pc = await q.$$eval('.dc-panel', ps => ps.map(p => p.getAttribute('data-c') + ':' + p.querySelector('.dc-n').textContent));
   console.log('priority panels', pc.join(' '));
-  assert.deepStrictEqual(pc.map(x => x.split(':')[0]), ['p1', 'p2', 'p3']);
+  assert.deepStrictEqual(pc.map(x => x.split(':')[0]), ['p1', 'p4', 'p2', 'p3']);
   await q.screenshot({ path: path.join(dir, 'ext-priority.png') });
   await q.click('.dc-seg-btn:has-text("By type")');
   // whole-mailbox search through Gmail's own search, across result pages

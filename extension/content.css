@@ -11,6 +11,7 @@
   --dc-p1: #d93025; --dc-p1-bg: #d93025; --dc-p1-ink: #ffffff;
   --dc-p2: #e8710a; --dc-p2-bg: #e8710a; --dc-p2-ink: #ffffff;
   --dc-p3: #f9ab00; --dc-p3-bg: #fdd663; --dc-p3-ink: #3c2e00;
+  --dc-p4: #188038; --dc-p4-bg: #188038; --dc-p4-ink: #ffffff;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -25,6 +26,7 @@
     --dc-p1: #f28b82; --dc-p1-bg: #b3261e; --dc-p1-ink: #ffffff;
     --dc-p2: #fcad70; --dc-p2-bg: #c25400; --dc-p2-ink: #ffffff;
     --dc-p3: #fdd663; --dc-p3-bg: #7a5b00; --dc-p3-ink: #fff3c4;
+    --dc-p4: #81c995; --dc-p4-bg: #0d652d; --dc-p4-ink: #ffffff;
   }
 }
 
@@ -51,15 +53,18 @@ tr.zA[data-dc-cat="waiting"] > td:first-child { box-shadow: inset 3px 0 0 #e8a10
 tr.zA[data-dc-box="p1"] > td:first-child { box-shadow: inset 4px 0 0 var(--dc-p1); }
 tr.zA[data-dc-box="p2"] > td:first-child { box-shadow: inset 4px 0 0 var(--dc-p2); }
 tr.zA[data-dc-box="p3"] > td:first-child { box-shadow: inset 4px 0 0 var(--dc-p3); }
+tr.zA[data-dc-box="p4"] > td:first-child { box-shadow: inset 4px 0 0 var(--dc-p4); }
 .dc-badge.dc-p { color: var(--dc-p1-ink); }
 .dc-badge.dc-p[data-p="p1"] { background: var(--dc-p1-bg); color: var(--dc-p1-ink); }
 .dc-badge.dc-p[data-p="p2"] { background: var(--dc-p2-bg); color: var(--dc-p2-ink); }
 .dc-badge.dc-p[data-p="p3"] { background: var(--dc-p3-bg); color: var(--dc-p3-ink); }
+.dc-badge.dc-p[data-p="p4"] { background: var(--dc-p4-bg); color: var(--dc-p4-ink); }
 
 /* ---- Filtering (driven by data attributes on <html>) ---- */
 html[data-dc-filter="p1"] tr.zA:not([data-dc-box="p1"]),
 html[data-dc-filter="p2"] tr.zA:not([data-dc-box="p2"]),
 html[data-dc-filter="p3"] tr.zA:not([data-dc-box="p3"]),
+html[data-dc-filter="p4"] tr.zA:not([data-dc-box="p4"]),
 html[data-dc-filter="reply"] tr.zA:not([data-dc-cat="reply"]),
 html[data-dc-filter="quick"] tr.zA:not([data-dc-quick="1"]),
 html[data-dc-filter="waiting"] tr.zA:not([data-dc-cat="waiting"]),
@@ -137,3 +142,4 @@ tr.zA[data-dc-gone="1"] { display: none !important; }
 .dc-panel[data-c="p1"] > header { border-top: 4px solid var(--dc-p1); border-radius: 16px 16px 0 0; }
 .dc-panel[data-c="p2"] > header { border-top: 4px solid var(--dc-p2); border-radius: 16px 16px 0 0; }
 .dc-panel[data-c="p3"] > header { border-top: 4px solid var(--dc-p3); border-radius: 16px 16px 0 0; }
+.dc-panel[data-c="p4"] > header { border-top: 4px solid var(--dc-p4); border-radius: 16px 16px 0 0; }

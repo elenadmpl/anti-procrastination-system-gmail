@@ -20,6 +20,7 @@
   ];
   var PRIORITY = [
     { id: 'p1', title: 'Important & urgent', badge: 'Important · Urgent' },
+    { id: 'p4', title: 'Important, not urgent', badge: 'Important' },
     { id: 'p2', title: 'Not important, urgent', badge: 'Urgent' },
     { id: 'p3', title: 'Not important, not urgent', badge: 'Low' }
   ];

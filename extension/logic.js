@@ -71,11 +71,12 @@ function parseMailto(mailto) {
   return { to: to, subject: q.subject || 'unsubscribe', body: q.body || 'unsubscribe' };
 }
 
-/** Priority colors: p1 red, p2 orange, p3 yellow (important+not urgent gets no color). */
+/** Priority boxes (Eisenhower matrix): p1 red, p2 orange, p3 yellow, p4 green. */
 var AP_PRIORITY_META = {
   p1: { title: 'Important & urgent',       color: 'red' },
   p2: { title: 'Not important, urgent',    color: 'orange' },
-  p3: { title: 'Not important, not urgent', color: 'yellow' }
+  p3: { title: 'Not important, not urgent', color: 'yellow' },
+  p4: { title: 'Important, not urgent',    color: 'green' }
 };
 
 /** Eisenhower-style box for a classified email. Returns 'p1' | 'p2' | 'p3' | '' */
@@ -87,7 +88,7 @@ function priorityBox(category, urgent, text) {
   if (important && urgent) return 'p1';
   if (!important && urgent) return 'p2';
   if (!important) return 'p3';
-  return '';
+  return 'p4';
 }
 
 /**
