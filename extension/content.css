@@ -12,6 +12,8 @@
   --dc-p2: #e8710a; --dc-p2-bg: #e8710a; --dc-p2-ink: #ffffff;
   --dc-p3: #f9ab00; --dc-p3-bg: #fdd663; --dc-p3-ink: #3c2e00;
   --dc-p4: #188038; --dc-p4-bg: #188038; --dc-p4-ink: #ffffff;
+  --dc-p1-tint: rgba(217, 48, 37, .13); --dc-p2-tint: rgba(232, 113, 10, .15);
+  --dc-p3-tint: rgba(249, 171, 0, .20); --dc-p4-tint: rgba(24, 128, 56, .12);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -27,6 +29,8 @@
     --dc-p2: #fcad70; --dc-p2-bg: #c25400; --dc-p2-ink: #ffffff;
     --dc-p3: #fdd663; --dc-p3-bg: #7a5b00; --dc-p3-ink: #fff3c4;
     --dc-p4: #81c995; --dc-p4-bg: #0d652d; --dc-p4-ink: #ffffff;
+    --dc-p1-tint: rgba(242, 139, 130, .20); --dc-p2-tint: rgba(252, 173, 112, .20);
+    --dc-p3-tint: rgba(253, 214, 99, .18); --dc-p4-tint: rgba(129, 201, 149, .18);
   }
 }
 
@@ -143,3 +147,9 @@ tr.zA[data-dc-gone="1"] { display: none !important; }
 .dc-panel[data-c="p2"] > header { border-top: 4px solid var(--dc-p2); border-radius: 16px 16px 0 0; }
 .dc-panel[data-c="p3"] > header { border-top: 4px solid var(--dc-p3); border-radius: 16px 16px 0 0; }
 .dc-panel[data-c="p4"] > header { border-top: 4px solid var(--dc-p4); border-radius: 16px 16px 0 0; }
+
+/* ---- Tint the whole email line with its priority color ---- */
+tr.zA[data-dc-box="p1"], tr.zA[data-dc-box="p1"] > td { background-color: var(--dc-p1-tint) !important; }
+tr.zA[data-dc-box="p2"], tr.zA[data-dc-box="p2"] > td { background-color: var(--dc-p2-tint) !important; }
+tr.zA[data-dc-box="p3"], tr.zA[data-dc-box="p3"] > td { background-color: var(--dc-p3-tint) !important; }
+tr.zA[data-dc-box="p4"], tr.zA[data-dc-box="p4"] > td { background-color: var(--dc-p4-tint) !important; }
