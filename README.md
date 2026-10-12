@@ -8,6 +8,13 @@ A Chrome extension that adds a clean interface **inside Gmail itself**: colored 
 3. Click **Load unpacked** and choose the unzipped folder. Edge, Opera and Arc work the same way.
 4. Open (or reload) Gmail. You will see the filter bar above your inbox and a blue **Focus** button at the bottom right.
 
+## Priority colors
+Every email also gets a priority color, shown as a colored stripe and tag on the row, as filter chips above the list, and as a **By priority** view on the board:
+* 🔴 **Important & urgent**: a real person writing to you, an overdue bill, or a security alert, with urgent wording ("urgent", "deadline", "due today", "final notice", "act now").
+* 🟠 **Not important, urgent**: time-limited promos and notices ("ends tonight", "today only", "last chance").
+* 🟡 **Not important, not urgent**: newsletters, notifications and other bulk mail.
+Important but not urgent mail (a friend asking about dinner, a normal bill) gets no color. The rules are in `priorityBox()` and the regexes at the top of `src/Logic.gs`.
+
 ## See your whole inbox (not just 50 at a time)
 Click **Open board ⤢** in the filter bar, then **Scan whole inbox**. Declutter walks through Gmail's pages by itself (page 1, 2, 3 …) and remembers every email it sees, so Focus, Newsletters and the board cover the entire inbox. About 2 to 3 seconds per page of 50. Press Stop any time. Re-scan whenever you like; results are saved in your browser.
 

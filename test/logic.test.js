@@ -38,6 +38,16 @@ assert.strictEqual(C({ ...base, fromEmail: 'ruben@substack.com', subject: 'Certi
 assert.strictEqual(C({ ...base, fromEmail: 'accountspayable@bdainc.com', subject: 'AP Validated and Unpaid Report', gmailCategory: 'personal' }).category, 'receipt');
 assert.strictEqual(C({ ...base, fromEmail: 'no-reply@otter.ai', subject: 'Meeting Summary', gmailCategory: 'updates' }).category, 'notification');
 assert.ok(L('isReaction')('😊 Ο χρήστης Elena αντέδρασε μέσω Gmail') && L('isReaction')('Elena reacted via Gmail') && !L('isReaction')('thanks!'));
+// priority boxes: p1 red, p2 orange, p3 yellow
+const box = o => C({ daysAgo: 2, getBody: () => '', ...o }).box;
+assert.strictEqual(box({ fromEmail: 'a@gmail.com', subject: 'Contract – please sign today, urgent' }), 'p1');
+assert.strictEqual(box({ fromEmail: 'billing@x.com', subject: 'Invoice overdue – final notice' }), 'p1');
+assert.strictEqual(box({ fromEmail: 'no-reply@bank.com', subject: 'Security alert: new sign-in, act today' }), 'p1');
+assert.strictEqual(box({ fromEmail: 'promo@shop.com', subject: '50% off ends tonight' }), 'p2');
+assert.strictEqual(box({ fromEmail: 'news@x.com', subject: 'This week in tech' }), 'p3');
+assert.strictEqual(box({ fromEmail: 'notifications@github.com', subject: 'New comment' }), 'p3');
+assert.strictEqual(box({ fromEmail: 'a@gmail.com', subject: 'Dinner?' }), '');            // important, not urgent: no color
+assert.strictEqual(box({ fromEmail: 'a@b.com', subject: 'x', lastFromMe: true }), '');     // waiting on others: no color
 const g = L('groupSenders')([
   { category: 'newsletter', fromEmail: 'a@x.com', fromName: 'A', date: '2026-01-01', unsubMethod: 'link' },
   { category: 'newsletter', fromEmail: 'a@x.com', fromName: 'A', date: '2026-02-01', unsubMethod: 'one-click' },

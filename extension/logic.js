@@ -18,7 +18,9 @@ var AP_RE_ROLE_SENDER = /^(accounts?-?payable|accounts?-?receivable|billing|invo
 var AP_RE_BULK_SENDER = /(@|\.)(substack\.com|mailchimp(app)?\.com|beehiiv\.com|convertkit|list-manage|sendgrid|mailgun|constantcontact|hubspot|medium\.com)$|^(news|newsletter|newsletters|digest|hello|marketing|mail|updates|weekly|promo|promos|promotions|offers?|deals?|sales|store|shop|rewards|events?)@/i;
 var AP_RE_REACTION = /(reacted via gmail|αντέδρασε μέσω gmail)/i;
 var AP_RE_RECEIPT = /\b(receipt|invoice|your order|order (confirmation|#|number|shipped)|payment (received|confirmation|failed)|unpaid|statement is|billing|bill is ready|subscription (renewal|renewed)|refund|booking confirmation|e-?ticket|itinerary)\b/i;
-var AP_RE_URGENT = /\b(urgent|asap|deadline|due (today|tomorrow|soon|by)|action required|final notice|expires?( today| soon)?|by (eod|end of day)|time[- ]sensitive|overdue|last chance to respond)\b/i;
+var AP_RE_URGENT = /\b(urgent|asap|deadline|due (today|tomorrow|soon|by)|action required|final notice|expires?( today| soon)?|ends? (today|tonight|soon|tomorrow)|today only|last chance|hurry|act (now|today)|immediately|within 24 hours|by (eod|end of day)|time[- ]sensitive|overdue|past due)\b/i;
+var AP_RE_MONEY = /\b(bill|invoice|unpaid|overdue|payment|statement|due)\b/i;
+var AP_RE_SECURITY = /\b(security alert|password|suspended|locked|unauthori[sz]ed|verify your (account|identity)|fraud)\b/i;
 
 /** '"Jane Doe" <jane@x.com>' -> {name, email} (email lower-cased). */
 function parseAddress(from) {
@@ -69,11 +71,38 @@ function parseMailto(mailto) {
   return { to: to, subject: q.subject || 'unsubscribe', body: q.body || 'unsubscribe' };
 }
 
+/** Priority colors: p1 red, p2 orange, p3 yellow (important+not urgent gets no color). */
+var AP_PRIORITY_META = {
+  p1: { title: 'Important & urgent',       color: 'red' },
+  p2: { title: 'Not important, urgent',    color: 'orange' },
+  p3: { title: 'Not important, not urgent', color: 'yellow' }
+};
+
+/** Eisenhower-style box for a classified email. Returns 'p1' | 'p2' | 'p3' | '' */
+function priorityBox(category, urgent, text) {
+  if (category === 'waiting') return '';
+  var important = category === 'reply' ||
+    (category === 'receipt' && AP_RE_MONEY.test(text || '')) ||
+    AP_RE_SECURITY.test(text || '');
+  if (important && urgent) return 'p1';
+  if (!important && urgent) return 'p2';
+  if (!important) return 'p3';
+  return '';
+}
+
 /**
  * Classify one thread (looking at its latest message).
  * t: {fromEmail, subject, hasListUnsub, gmailCategory, lastFromMe, daysAgo, unread, getBody()}
+ * Returns {category, urgent, quick, hasQuestion, priority (score), box}
  */
 function classifyThread(t) {
+  var res = classifyBase_(t);
+  if (res.category !== 'reply') res.urgent = AP_RE_URGENT.test(String(t.subject || ''));
+  res.box = priorityBox(res.category, res.urgent, String(t.subject || ''));
+  return res;
+}
+
+function classifyBase_(t) {
   var res = { category: 'notification', urgent: false, quick: false, hasQuestion: false, priority: 0 };
   var subject = String(t.subject || '');
 

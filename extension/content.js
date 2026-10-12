@@ -18,13 +18,18 @@
     { id: 'waiting', title: 'Waiting on others' }, { id: 'newsletter', title: 'Newsletters' },
     { id: 'receipt', title: 'Receipts & bills' }, { id: 'notification', title: 'Notifications' }
   ];
+  var PRIORITY = [
+    { id: 'p1', title: 'Important & urgent', badge: 'Important · Urgent' },
+    { id: 'p2', title: 'Not important, urgent', badge: 'Urgent' },
+    { id: 'p3', title: 'Not important, not urgent', badge: 'Low' }
+  ];
   var BADGE = { reply: 'Reply', waiting: 'Waiting', newsletter: 'Newsletter', receipt: 'Receipt', notification: 'Notice' };
 
   var state = { done: {}, snooze: {}, days: {} };
   var scan = [];            // items for rows currently on screen (hold DOM refs)
   var archive = {};         // key -> plain item for every email seen or scanned (survives page changes)
   var scanning = null;      // {stop, count, page} while "Scan whole inbox" is running
-  var board = { q: '', age: 0, unread: false, results: null };
+  var board = { q: '', age: 0, unread: false, results: null, view: 'type' };
   var MAX_PAGES = 200;
   var filter = 'all';
   var tab = 'focus';
@@ -98,7 +103,7 @@
     return {
       row: row, ts: ts, key: threadId || (fromEmail + '|' + subject), threadId: threadId, fromEmail: fromEmail,
       fromName: lastFromMe ? 'You' : fromName, subject: subject || '(no subject)', snippet: snippet, daysAgo: daysAgo,
-      category: c.category, urgent: c.urgent,
+      category: c.category, urgent: c.urgent, box: c.box,
       // The list only shows a snippet, so "short" must mean the whole message plausibly fits in it.
       quick: c.category === 'reply' && snippet.length > 0 && snippet.length < 60, priority: c.priority,
       unread: row.classList.contains('zE')
@@ -120,7 +125,7 @@
   }
   function plain(it) {
     return { key: it.key, threadId: it.threadId, fromEmail: it.fromEmail, fromName: it.fromName, subject: it.subject,
-      snippet: it.snippet.slice(0, 140), ts: it.ts, category: it.category, urgent: it.urgent, quick: it.quick,
+      snippet: it.snippet.slice(0, 140), ts: it.ts, category: it.category, urgent: it.urgent, box: it.box, quick: it.quick,
       priority: it.priority, unread: it.unread };
   }
   function age(it) { return Math.max(0, Math.floor((Date.now() - it.ts) / 86400000)); }
@@ -130,6 +135,7 @@
       if (isGone(it)) return false;
       if (cat === 'all') return true;
       if (cat === 'quick') return it.quick;
+      if (/^p\d$/.test(cat)) return it.box === cat;
       return it.category === cat;
     }).sort(function (a, b) { return b.priority - a.priority || b.ts - a.ts; });
   }
@@ -138,6 +144,7 @@
       if (isGone(it)) return false;
       if (cat === 'all') return true;
       if (cat === 'quick') return it.quick;
+      if (/^p\d$/.test(cat)) return it.box === cat;
       return it.category === cat;
     });
   }
@@ -150,16 +157,17 @@
         var r = it.row;
         set(r, 'data-dc-cat', it.category);
         set(r, 'data-dc-quick', it.quick ? '1' : '0');
+        set(r, 'data-dc-box', it.box || '');
         set(r, 'data-dc-gone', isGone(it) ? '1' : '0');
         var host = r.querySelector(ROW_SEL.badgeHost);
         if (!host) return;
-        var sig = it.category + (it.urgent ? 'u' : '') + (it.quick ? 'q' : '');
+        var sig = it.category + (it.box || '-') + (it.quick ? 'q' : '');
         var box = host.querySelector('.dc-badges');
         if (box && box.getAttribute('data-sig') === sig) return;
         if (box) box.remove();
         box = el('span', { class: 'dc-badges', 'data-sig': sig },
           el('span', { class: 'dc-badge', 'data-c': it.category }, BADGE[it.category]),
-          it.urgent ? el('span', { class: 'dc-badge dc-urgent' }, 'Urgent') : null,
+          it.box ? el('span', { class: 'dc-badge dc-p', 'data-p': it.box }, boxTitle(it.box, true)) : null,
           it.quick ? el('span', { class: 'dc-badge dc-quick' }, '2 min') : null);
         host.insertBefore(box, host.firstChild);
       });
@@ -169,6 +177,7 @@
       if (document.getElementById('dc-board')) { renderPanels(); renderBoardHead(); }
     } finally { observe(); }
   }
+  function boxTitle(id, short) { var p = PRIORITY.filter(function (x) { return x.id === id; })[0]; return p ? (short ? p.badge : p.title) : ''; }
   function set(node, a, v) { if (node.getAttribute(a) !== v) node.setAttribute(a, v); }
 
   function renderBar() {
@@ -176,7 +185,7 @@
     if (!main) return;
     var bar = document.getElementById('dc-bar');
     if (!bar) { bar = el('div', { id: 'dc-bar' }); main.insertBefore(bar, main.firstChild); }
-    var sig = CATS.map(function (c) { return visible(c.id).length; }).join(',') + filter;
+    var sig = CATS.concat(PRIORITY).map(function (c) { return visible(c.id).length; }).join(',') + filter;
     if (bar.getAttribute('data-sig') === sig) return;
     bar.setAttribute('data-sig', sig);
     bar.replaceChildren.apply(bar, [el('span', { class: 'dc-label' }, 'Declutter')].concat(
@@ -184,7 +193,10 @@
         return el('button', { class: 'dc-chip', 'aria-pressed': String(filter === c.id), onclick: function () { setFilter(c.id); } },
           c.id !== 'all' && c.id !== 'quick' ? el('span', { class: 'dc-dot', style: 'background:var(--dc-' + c.id + ')' }) : null,
           c.title, el('span', { class: 'dc-n' }, visible(c.id).length));
-      }).concat([el('button', { class: 'dc-chip dc-board-btn', onclick: openBoard }, 'Open board ⤢')])));
+      }).concat([el('span', { class: 'dc-sep' })]).concat(PRIORITY.map(function (c) {
+        return el('button', { class: 'dc-chip', 'aria-pressed': String(filter === c.id), onclick: function () { setFilter(c.id); } },
+          el('span', { class: 'dc-dot', style: 'background:var(--dc-' + c.id + ')' }), c.title, el('span', { class: 'dc-n' }, visible(c.id).length));
+      })).concat([el('button', { class: 'dc-chip dc-board-btn', onclick: openBoard }, 'Open board ⤢')])));
   }
   function setFilter(id) {
     filter = id;
@@ -250,7 +262,7 @@
     return el('div', {}, track, el('div', { class: 'dc-card' },
       el('div', { class: 'dc-hint' }, 'Just this one. ' + left + ' left.'),
       el('span', { class: 'dc-badge', 'data-c': it.category }, BADGE[it.category]),
-      it.urgent ? el('span', { class: 'dc-badge dc-urgent' }, 'Urgent') : null,
+      it.box ? el('span', { class: 'dc-badge dc-p', 'data-p': it.box }, boxTitle(it.box)) : null,
       el('h3', {}, it.subject),
       el('div', { class: 'dc-who' }, it.fromName + ' · ' + (age(it) ? age(it) + ' days ago' : 'today')),
       el('p', { class: 'dc-snip' }, it.snippet),
@@ -382,6 +394,9 @@
     var q = document.getElementById('dc-q'), keep = q && document.activeElement === q;
     h.replaceChildren(
       el('h2', {}, 'Declutter board'),
+      el('div', { class: 'dc-seg', role: 'tablist' }, [['type', 'By type'], ['priority', 'By priority']].map(function (v) {
+        return el('button', { class: 'dc-seg-btn', role: 'tab', 'aria-selected': String(board.view === v[0]), onclick: function () { board.view = v[0]; renderBoardHead(); renderPanels(); } }, v[1]);
+      })),
       el('input', { id: 'dc-q', type: 'search', placeholder: 'Search sender, subject…', value: board.q, 'aria-label': 'Search',
         oninput: function (e) { board.q = e.target.value; if (board.results && !e.target.value) board.results = null; renderPanels(); },
         onkeydown: function (e) { if (e.key === 'Enter') searchAll(board.q); } }),
@@ -400,7 +415,9 @@
   function renderPanels() {
     var wrap = document.getElementById('dc-panels'); if (!wrap) return;
     if (board.results) { wrap.replaceChildren(resultsPanel()); return; }
-    wrap.replaceChildren.apply(wrap, PANELS.map(function (pn) {
+    var defs = board.view === 'priority'
+      ? PRIORITY.map(function (x) { return { id: x.id, title: x.title, group: x.id === 'p3' }; }) : PANELS;
+    wrap.replaceChildren.apply(wrap, defs.map(function (pn) {
       var items = pool(pn.id).filter(matches);
       var body;
       if (!items.length) body = el('div', { class: 'dc-empty' }, 'Nothing here');
@@ -411,8 +428,9 @@
             el('b', {}, it.subject),
             el('small', {}, (pn.id === 'waiting' ? 'To ' : '') + it.fromName + ' · ' + (age(it) ? age(it) + 'd' : 'today')),
             it.snippet ? el('small', { class: 'dc-clip' }, it.snippet) : null),
-          el('div', { class: 'dc-item-side' }, it.urgent ? el('span', { class: 'dc-badge dc-urgent' }, 'Urgent') : null,
+          el('div', { class: 'dc-item-side' }, it.box ? el('span', { class: 'dc-badge dc-p', 'data-p': it.box }, boxTitle(it.box, true)) : null,
             it.quick ? el('span', { class: 'dc-badge dc-quick' }, '2 min') : null,
+            board.view === 'priority' ? el('span', { class: 'dc-badge', 'data-c': it.category }, BADGE[it.category]) : null,
             el('button', { class: 'dc-btn', onclick: function () { finish(it); } }, 'Done')));
       }).concat(items.length > 150 ? [el('div', { class: 'dc-hint' }, '+ ' + (items.length - 150) + ' more. Narrow with search or age.')] : []);
       return el('section', { class: 'dc-panel', 'data-c': pn.id },
