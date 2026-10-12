@@ -16,6 +16,12 @@ Every email also gets a priority color, shown as a colored stripe and tag on the
 * 🟢 **Important, not urgent**: a real person writing to you without urgent wording, or a normal bill. Plan these.
 The rules are in `priorityBox()` and the regexes at the top of `src/Logic.gs`.
 
+## Waiting time, alerts, companies and auto-sort
+* **The longer someone waits, the redder it gets.** An email from a real person you have not answered turns 🟠 orange after 2 days and 🔴 red after 7 days (`agingBox()` in `src/Logic.gs`). It updates every day without a rescan.
+* **"Luke is waiting for your reply."** A card appears inside Gmail (bottom left) for everyone waiting 2+ days, longest wait first, with Reply, Remind me tomorrow and Done. The 🔔 chip shows the count and brings the card back; Mute for today hides it for 12 hours.
+* **Websites group.** The **Websites** chip shows every automated email (newsletters, receipts, notifications) in one place. The **Company…** drop-down filters by company (from the sender's domain, or the sender's name for Substack/Mailchimp-style newsletters), and **LinkedIn** is pinned as its own filter. Pin more from the board: **By company**, then **Pin as filter**.
+* **Auto-sort filters.** On the board click **Auto-sort filters** to download a Gmail filter file, then import it once (Gmail gear, See all settings, Filters and Blocked Addresses, Import filters). From then on Gmail itself labels every new email as it arrives, even with Gmail closed: `Declutter/LinkedIn`, `Declutter/Newsletters`, `Declutter/Notifications`, `Declutter/Receipts and Bills`, `Declutter/Urgent`, and one `Declutter/Companies/<name>` per company with 3+ emails in your scan. An optional tick also skips the inbox for newsletters and notifications. Gmail may apply more than one label to the same email.
+
 ## See your whole inbox (not just 50 at a time)
 Click **Open board ⤢** in the filter bar, then **Scan whole inbox**. Declutter walks through Gmail's pages by itself (page 1, 2, 3 …) and remembers every email it sees, so Focus, Newsletters and the board cover the entire inbox. About 2 to 3 seconds per page of 50. Press Stop any time. Re-scan whenever you like; results are saved in your browser.
 

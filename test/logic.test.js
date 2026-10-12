@@ -59,4 +59,28 @@ const s = L('computeStreak');
 assert.strictEqual(s({ '2026-10-09': 2, '2026-10-08': 1, '2026-10-07': 1, '2026-10-05': 4 }, '2026-10-09'), 3);
 assert.strictEqual(s({ '2026-10-08': 1 }, '2026-10-09'), 1); // today not yet started: streak survives
 assert.strictEqual(s({}, '2026-10-09'), 0);
+// waiting-time escalation: a person waiting 7+ days is red, 2-6 days orange
+const A = L('agingBox');
+assert.strictEqual(A('reply', 'p4', 9), 'p1');
+assert.strictEqual(A('reply', 'p4', 3), 'p2');
+assert.strictEqual(A('reply', 'p1', 3), 'p1');
+assert.strictEqual(A('reply', 'p4', 1), 'p4');
+assert.strictEqual(A('newsletter', 'p3', 30), 'p3'); // only people waiting on you escalate
+
+// companies
+const K = L('companyOf');
+assert.deepStrictEqual(j(K('messages-noreply@linkedin.com', 'LinkedIn')), { name: 'LinkedIn', domain: 'linkedin.com' });
+assert.deepStrictEqual(j(K('executive_education@mailsvc.sloan.mit.edu', 'MIT Sloan')), { name: 'MIT', domain: 'mit.edu' });
+assert.deepStrictEqual(j(K('x@shop.co.uk', 'Shop')), { name: 'Shop', domain: 'shop.co.uk' });
+assert.deepStrictEqual(j(K('ruben@substack.com', 'Ruben Hassid')), { name: 'Ruben Hassid', domain: '' }); // platforms use the writer's name
+
+// Gmail filter import file
+const rules = L('gmailFilterRules')([{ name: 'Vodafone', domain: 'vodafone.gr', count: 5 }, { name: 'Rare', domain: 'rare.io', count: 1 }], { skipInbox: true });
+assert.ok(rules.some(r => r.label === 'Declutter/LinkedIn'));
+assert.ok(rules.some(r => r.label === 'Declutter/Companies/Vodafone' && r.from === 'vodafone.gr'));
+assert.ok(!rules.some(r => r.label.includes('Rare')), 'companies with fewer than 3 emails get no filter');
+assert.strictEqual(rules.find(r => r.label === 'Declutter/Newsletters').archive, true);
+assert.strictEqual(L('gmailFilterRules')([], {}).find(r => r.label === 'Declutter/Newsletters').archive, false); // inbox kept by default
+const xml = L('filtersToXml')([{ from: 'a&b.com', label: 'X/Y', archive: true }]);
+assert.match(xml, /name='from' value='a&amp;b.com'/); assert.match(xml, /shouldArchive/); assert.match(xml, /<\/feed>$/);
 console.log('all logic tests passed');

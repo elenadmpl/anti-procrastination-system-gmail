@@ -177,3 +177,95 @@ function computeStreak(daysMap, todayKey) {
 
 /** Gmail "reacted with an emoji" messages are not real replies. */
 function isReaction(text) { return AP_RE_REACTION.test(String(text || '')); }
+
+/* ---------- waiting-time escalation ---------- */
+
+/**
+ * Someone is waiting for YOUR reply: the longer it sits, the hotter it gets.
+ * 7+ days -> p1 (red). 2-6 days -> p2 (orange) unless it is already p1. Fresher mail keeps its normal box.
+ */
+function agingBox(category, baseBox, daysAgo) {
+  if (category !== 'reply') return baseBox;
+  if (daysAgo >= 7) return 'p1';
+  if (daysAgo >= 2 && baseBox !== 'p1') return 'p2';
+  return baseBox;
+}
+
+/* ---------- companies (who the website/sender is) ---------- */
+
+var AP_SECOND_LEVEL = /^(co|com|org|net|gov|ac|edu)\.[a-z]{2}$/i;
+var AP_BULK_PLATFORMS = /(^|\.)(substack\.com|mailchimp\.com|mailchimpapp\.com|list-manage\.com|sendgrid\.net|mailgun\.org|beehiiv\.com|convertkit\.com|hubspotemail\.net|constantcontact\.com|amazonses\.com|mandrillapp\.com|e\.read\.ai)$/i;
+var AP_BRANDS = {
+  linkedin: 'LinkedIn', github: 'GitHub', youtube: 'YouTube', paypal: 'PayPal', wetransfer: 'WeTransfer',
+  imdbpro: 'IMDbPro', imdb: 'IMDb', otter: 'Otter.ai', pinterest: 'Pinterest', medium: 'Medium', pitch: 'Pitch',
+  acm: 'ACM', mit: 'MIT', google: 'Google', microsoft: 'Microsoft', microsoftadvertising: 'Microsoft Advertising',
+  amazon: 'Amazon', apple: 'Apple', facebook: 'Facebook', facebookmail: 'Facebook', instagram: 'Instagram',
+  twitter: 'X (Twitter)', x: 'X (Twitter)', slack: 'Slack', zoom: 'Zoom', notion: 'Notion', figma: 'Figma',
+  canva: 'Canva', adobe: 'Adobe', spotify: 'Spotify', uber: 'Uber', airbnb: 'Airbnb', booking: 'Booking.com',
+  accredible: 'Accredible', lucidlink: 'LucidLink', atomos: 'Atomos', vodafone: 'Vodafone'
+};
+
+/** 'no-reply@mailsvc.sloan.mit.edu' -> 'mit.edu'; 'x@foo.co.uk' -> 'foo.co.uk' */
+function registrableDomain(email) {
+  var host = String(email || '').split('@')[1] || '';
+  var labels = host.toLowerCase().split('.').filter(String);
+  if (labels.length <= 2) return labels.join('.');
+  var last2 = labels.slice(-2).join('.');
+  return AP_SECOND_LEVEL.test(last2) ? labels.slice(-3).join('.') : last2;
+}
+
+/** {name, domain}. Bulk-mail platforms (Substack, Mailchimp...) use the sender's display name instead. */
+function companyOf(email, displayName) {
+  var host = (String(email || '').split('@')[1] || '').toLowerCase();
+  var domain = registrableDomain(email);
+  if (!domain) return { name: displayName || 'Unknown', domain: '' };
+  if (AP_BULK_PLATFORMS.test(host)) return { name: displayName || domain, domain: '' }; // domain '' = do not filter by domain
+  var label = domain.split('.')[0];
+  var brand = AP_BRANDS[label];
+  if (!brand) brand = label.charAt(0).toUpperCase() + label.slice(1);
+  return { name: brand, domain: domain };
+}
+
+/* ---------- Gmail filters (import once, then Gmail files new mail itself) ---------- */
+
+/**
+ * Rules for Gmail's own filter engine. companies: [{name, domain, count}] from the user's scanned mail.
+ * opts: {skipInbox: bool} archive low-priority groups on arrival.
+ */
+function gmailFilterRules(companies, opts) {
+  opts = opts || {};
+  var skip = !!opts.skipInbox;
+  var rules = [
+    { from: 'linkedin.com', label: 'Declutter/LinkedIn', archive: false },
+    { from: 'substack.com OR mailchimpapp.com OR list-manage.com OR beehiiv.com OR convertkit.com OR sendgrid.net OR newsletter OR digest',
+      label: 'Declutter/Newsletters', archive: skip },
+    { from: 'noreply OR no-reply OR donotreply OR notifications OR mailer-daemon', label: 'Declutter/Notifications', archive: skip },
+    { subject: 'receipt OR invoice OR "your order" OR payment OR "your bill" OR statement', from: 'noreply OR no-reply OR billing OR orders OR invoice OR accountspayable',
+      label: 'Declutter/Receipts and Bills', archive: false },
+    { subject: 'urgent OR "action required" OR "final notice" OR overdue OR "due today" OR "last chance"', label: 'Declutter/Urgent', archive: false }
+  ];
+  (companies || []).filter(function (c) { return c.domain && c.count >= 3 && c.domain !== 'linkedin.com'; })
+    .slice(0, 60).forEach(function (c) {
+      rules.push({ from: c.domain, label: 'Declutter/Companies/' + c.name.replace(/[\/\\]/g, '-'), archive: false });
+    });
+  return rules;
+}
+
+function xmlEsc_(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&apos;').replace(/"/g, '&quot;'); }
+
+/** Gmail "Import filters" file (Settings > Filters and Blocked Addresses > Import filters). */
+function filtersToXml(rules) {
+  var out = ["<?xml version='1.0' encoding='UTF-8'?>",
+    "<feed xmlns='http://www.w3.org/2005/Atom' xmlns:apps='http://schemas.google.com/apps/2006'>",
+    '\t<title>Mail Filters</title>'];
+  rules.forEach(function (r) {
+    out.push("\t<entry>", "\t\t<category term='filter'></category>", '\t\t<title>Mail Filter</title>', '\t\t<content></content>');
+    if (r.from) out.push("\t\t<apps:property name='from' value='" + xmlEsc_(r.from) + "'/>");
+    if (r.subject) out.push("\t\t<apps:property name='subject' value='" + xmlEsc_(r.subject) + "'/>");
+    out.push("\t\t<apps:property name='label' value='" + xmlEsc_(r.label) + "'/>");
+    if (r.archive) out.push("\t\t<apps:property name='shouldArchive' value='true'/>");
+    out.push("\t\t<apps:property name='sizeOperator' value='s_sl'/>", "\t\t<apps:property name='sizeUnit' value='s_smb'/>", '\t</entry>');
+  });
+  out.push('</feed>');
+  return out.join('\n');
+}

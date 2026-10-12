@@ -18,6 +18,7 @@
     { id: 'waiting', title: 'Waiting on others' }, { id: 'newsletter', title: 'Newsletters' },
     { id: 'receipt', title: 'Receipts & bills' }, { id: 'notification', title: 'Notifications' }
   ];
+  var WEBSITES = { id: 'websites', title: 'Websites' };
   var PRIORITY = [
     { id: 'p1', title: 'Important & urgent', badge: 'Important · Urgent' },
     { id: 'p4', title: 'Important, not urgent', badge: 'Important' },
@@ -26,12 +27,13 @@
   ];
   var BADGE = { reply: 'Reply', waiting: 'Waiting', newsletter: 'Newsletter', receipt: 'Receipt', notification: 'Notice' };
 
-  var state = { done: {}, snooze: {}, days: {} };
+  var state = { done: {}, snooze: {}, days: {}, pinned: ['LinkedIn'], notifSnooze: {}, muteUntil: 0 };
   var scan = [];            // items for rows currently on screen (hold DOM refs)
   var archive = {};         // key -> plain item for every email seen or scanned (survives page changes)
   var scanning = null;      // {stop, count, page} while "Scan whole inbox" is running
   var board = { q: '', age: 0, unread: false, results: null, view: 'type' };
   var MAX_PAGES = 200;
+  var notifOpen = true;
   var filter = 'all';
   var tab = 'focus';
   var skipped = {};
@@ -97,6 +99,7 @@
     var lastFromMe = (me && fromEmail === me) || fromName.toLowerCase() === 'me';
     var idEl = row.querySelector(ROW_SEL.threadId);
     var threadId = idEl ? idEl.getAttribute('data-legacy-thread-id') : '';
+    var co = lastFromMe ? { name: '', domain: '' } : companyOf(fromEmail, fromName);
     var c = classifyThread({
       fromEmail: fromEmail, subject: subject, gmailCategory: gcat, lastFromMe: lastFromMe, daysAgo: daysAgo,
       unread: row.classList.contains('zE'), hasListUnsub: false, getBody: function () { return snippet; }
@@ -104,7 +107,7 @@
     return {
       row: row, ts: ts, key: threadId || (fromEmail + '|' + subject), threadId: threadId, fromEmail: fromEmail,
       fromName: lastFromMe ? 'You' : fromName, subject: subject || '(no subject)', snippet: snippet, daysAgo: daysAgo,
-      category: c.category, urgent: c.urgent, box: c.box,
+      category: c.category, urgent: c.urgent, base: c.box, company: co.name, domain: co.domain,
       // The list only shows a snippet, so "short" must mean the whole message plausibly fits in it.
       quick: c.category === 'reply' && snippet.length > 0 && snippet.length < 60, priority: c.priority,
       unread: row.classList.contains('zE')
@@ -126,28 +129,29 @@
   }
   function plain(it) {
     return { key: it.key, threadId: it.threadId, fromEmail: it.fromEmail, fromName: it.fromName, subject: it.subject,
-      snippet: it.snippet.slice(0, 140), ts: it.ts, category: it.category, urgent: it.urgent, box: it.box, quick: it.quick,
+      snippet: it.snippet.slice(0, 140), ts: it.ts, category: it.category, urgent: it.urgent, base: it.base, company: it.company, domain: it.domain, quick: it.quick,
       priority: it.priority, unread: it.unread };
   }
   function age(it) { return Math.max(0, Math.floor((Date.now() - it.ts) / 86400000)); }
   /** Everything we know about (current page + earlier pages + full scan), minus done/snoozed. */
+  function isWeb(it) { return it.category === 'newsletter' || it.category === 'receipt' || it.category === 'notification'; }
+  /** Priority box right now: waiting time escalates mail from real people (7+ days red, 2-6 days orange). */
+  function boxNow(it) { return agingBox(it.category, it.base !== undefined ? it.base : boxNow(it), age(it)); }
+  function matchCat(it, cat) {
+    if (cat === 'all') return true;
+    if (cat === 'quick') return it.quick;
+    if (/^p\d$/.test(cat)) return boxNow(it) === cat;
+    if (cat === 'websites') return isWeb(it);
+    if (cat.indexOf('co:') === 0) return isWeb(it) && it.company === cat.slice(3);
+    return it.category === cat;
+  }
   function pool(cat) {
     return Object.keys(archive).map(function (k) { return archive[k]; }).filter(function (it) {
-      if (isGone(it)) return false;
-      if (cat === 'all') return true;
-      if (cat === 'quick') return it.quick;
-      if (/^p\d$/.test(cat)) return it.box === cat;
-      return it.category === cat;
+      return !isGone(it) && matchCat(it, cat);
     }).sort(function (a, b) { return b.priority - a.priority || b.ts - a.ts; });
   }
   function visible(cat) {
-    return scan.filter(function (it) {
-      if (isGone(it)) return false;
-      if (cat === 'all') return true;
-      if (cat === 'quick') return it.quick;
-      if (/^p\d$/.test(cat)) return it.box === cat;
-      return it.category === cat;
-    });
+    return scan.filter(function (it) { return !isGone(it) && matchCat(it, cat); });
   }
 
   /* ---------- decorating Gmail's list ---------- */
@@ -158,17 +162,19 @@
         var r = it.row;
         set(r, 'data-dc-cat', it.category);
         set(r, 'data-dc-quick', it.quick ? '1' : '0');
-        set(r, 'data-dc-box', it.box || '');
+        set(r, 'data-dc-box', boxNow(it) || '');
+        set(r, 'data-dc-web', isWeb(it) ? '1' : '0');
+        set(r, 'data-dc-sel', filter.indexOf('co:') === 0 ? (isWeb(it) && it.company === filter.slice(3) ? '1' : '0') : '1');
         set(r, 'data-dc-gone', isGone(it) ? '1' : '0');
         var host = r.querySelector(ROW_SEL.badgeHost);
         if (!host) return;
-        var sig = it.category + (it.box || '-') + (it.quick ? 'q' : '');
+        var sig = it.category + (boxNow(it) || '-') + (it.quick ? 'q' : '');
         var box = host.querySelector('.dc-badges');
         if (box && box.getAttribute('data-sig') === sig) return;
         if (box) box.remove();
         box = el('span', { class: 'dc-badges', 'data-sig': sig },
           el('span', { class: 'dc-badge', 'data-c': it.category }, BADGE[it.category]),
-          it.box ? el('span', { class: 'dc-badge dc-p', 'data-p': it.box }, boxTitle(it.box, true)) : null,
+          boxNow(it) ? el('span', { class: 'dc-badge dc-p', 'data-p': boxNow(it) }, boxTitle(boxNow(it), true)) : null,
           it.quick ? el('span', { class: 'dc-badge dc-quick' }, '2 min') : null);
         host.insertBefore(box, host.firstChild);
       });
@@ -176,36 +182,86 @@
       renderLauncher();
       if (drawer().classList.contains('dc-open')) renderDrawer();
       if (document.getElementById('dc-board')) { renderPanels(); renderBoardHead(); }
+      renderNotifs();
     } finally { observe(); }
   }
   function boxTitle(id, short) { var p = PRIORITY.filter(function (x) { return x.id === id; })[0]; return p ? (short ? p.badge : p.title) : ''; }
   function set(node, a, v) { if (node.getAttribute(a) !== v) node.setAttribute(a, v); }
 
+  function companyList() {
+    var map = {};
+    pool('websites').forEach(function (it) { if (it.company) { var g = map[it.company] || (map[it.company] = { name: it.company, domain: it.domain, items: [] }); g.items.push(it); } });
+    return Object.keys(map).map(function (k) { return map[k]; }).sort(function (a, b) { return b.items.length - a.items.length; });
+  }
+  function chip(id, title, dotVar) {
+    return el('button', { class: 'dc-chip', 'aria-pressed': String(filter === id), onclick: function () { setFilter(filter === id && id !== 'all' ? 'all' : id); } },
+      dotVar ? el('span', { class: 'dc-dot', style: 'background:var(--dc-' + dotVar + ')' }) : null,
+      title, el('span', { class: 'dc-n' }, visible(id).length));
+  }
   function renderBar() {
     var main = document.querySelector(ROW_SEL.main);
     if (!main) return;
     var bar = document.getElementById('dc-bar');
     if (!bar) { bar = el('div', { id: 'dc-bar' }); main.insertBefore(bar, main.firstChild); }
-    var sig = CATS.concat(PRIORITY).map(function (c) { return visible(c.id).length; }).join(',') + filter;
+    var companies = companyList().slice(0, 25);
+    var waiting = waitingOnYou().length;
+    var sig = CATS.concat([WEBSITES], PRIORITY).map(function (c) { return visible(c.id).length; }).join(',') + filter +
+      state.pinned.map(function (n) { return n + visible('co:' + n).length; }).join(',') + companies.map(function (c) { return c.name + c.items.length; }).join(',') + '|' + waiting;
     if (bar.getAttribute('data-sig') === sig) return;
     bar.setAttribute('data-sig', sig);
-    bar.replaceChildren.apply(bar, [el('span', { class: 'dc-label' }, 'Declutter')].concat(
-      CATS.map(function (c) {
-        return el('button', { class: 'dc-chip', 'aria-pressed': String(filter === c.id), onclick: function () { setFilter(c.id); } },
-          c.id !== 'all' && c.id !== 'quick' ? el('span', { class: 'dc-dot', style: 'background:var(--dc-' + c.id + ')' }) : null,
-          c.title, el('span', { class: 'dc-n' }, visible(c.id).length));
-      }).concat([el('span', { class: 'dc-sep' })]).concat(PRIORITY.map(function (c) {
-        return el('button', { class: 'dc-chip', 'aria-pressed': String(filter === c.id), onclick: function () { setFilter(c.id); } },
-          el('span', { class: 'dc-dot', style: 'background:var(--dc-' + c.id + ')' }), c.title, el('span', { class: 'dc-n' }, visible(c.id).length));
-      })).concat([el('button', { class: 'dc-chip dc-board-btn', onclick: openBoard }, 'Open board ⤢')])));
+    var kids = [el('span', { class: 'dc-label' }, 'Declutter')];
+    CATS.forEach(function (c) { kids.push(chip(c.id, c.title, c.id !== 'all' && c.id !== 'quick' ? c.id : null)); });
+    kids.push(el('span', { class: 'dc-sep' }));
+    PRIORITY.forEach(function (c) { kids.push(chip(c.id, c.title, c.id)); });
+    kids.push(el('span', { class: 'dc-sep' }));
+    kids.push(chip('websites', 'Websites', 'websites'));
+    state.pinned.forEach(function (n) { kids.push(chip('co:' + n, n, 'websites')); });
+    kids.push(el('select', { class: 'dc-select', 'aria-label': 'Filter by company', onchange: function (e) { if (e.target.value) setFilter('co:' + e.target.value); } },
+      [el('option', { value: '' }, 'Company…')].concat(companies.map(function (c) {
+        return el('option', { value: c.name, selected: filter === 'co:' + c.name ? 'selected' : null }, c.name + ' (' + c.items.length + ')'); }))));
+    kids.push(el('button', { class: 'dc-chip dc-bell', onclick: function () { notifOpen = true; state.muteUntil = 0; save(); renderNotifs(true); } }, '🔔 ' + waiting + ' waiting for you'));
+    kids.push(el('button', { class: 'dc-chip dc-board-btn', onclick: openBoard }, 'Open board ⤢'));
+    bar.replaceChildren.apply(bar, kids);
   }
   function setFilter(id) {
     filter = id;
     if (id === 'all') document.documentElement.removeAttribute('data-dc-filter');
-    else document.documentElement.setAttribute('data-dc-filter', id);
+    else document.documentElement.setAttribute('data-dc-filter', id.indexOf('co:') === 0 ? 'company' : id);
     var bar = document.getElementById('dc-bar'); if (bar) bar.removeAttribute('data-sig');
     paint();
   }
+
+  /* ---------- in-page notifications: "Luke is waiting for your reply" ---------- */
+  function firstName(n) { var t = String(n || '').trim().split(/\s+/)[0]; return t || 'Someone'; }
+  function waitingOnYou() {
+    var now = Date.now();
+    return pool('reply').filter(function (it) { return age(it) >= 2 && !(state.notifSnooze[it.key] > now); })
+      .sort(function (a, b) { return a.ts - b.ts; });            // longest wait first
+  }
+  function renderNotifs(force) {
+    var box = document.getElementById('dc-notifs');
+    var list = waitingOnYou();
+    if (!list.length || !notifOpen || state.muteUntil > Date.now() || document.getElementById('dc-board')) { if (box) box.remove(); return; }
+    var sig = list.slice(0, 3).map(function (i) { return i.key + age(i); }).join('|') + list.length;
+    if (box && !force && box.getAttribute('data-sig') === sig) return;
+    if (!box) { box = el('div', { id: 'dc-notifs', role: 'region', 'aria-label': 'People waiting for your reply' }); document.body.append(box); }
+    box.setAttribute('data-sig', sig);
+    var kids = [el('div', { class: 'dc-n-head' }, el('b', {}, list.length + (list.length === 1 ? ' person is' : ' people are') + ' waiting for you'),
+      el('button', { class: 'dc-x', 'aria-label': 'Hide', onclick: function () { notifOpen = false; renderNotifs(); } }, '×'))];
+    list.slice(0, 3).forEach(function (it) {
+      kids.push(el('div', { class: 'dc-n-card', 'data-p': boxNow(it) },
+        el('b', {}, firstName(it.fromName) + ' is waiting for your reply'),
+        el('small', {}, it.subject + ' · ' + age(it) + ' days'),
+        el('div', { class: 'dc-actions' },
+          el('button', { class: 'dc-btn dc-primary', onclick: function () { open(it); } }, 'Reply'),
+          el('button', { class: 'dc-btn', onclick: function () { state.notifSnooze[it.key] = Date.now() + 86400000; save(); renderNotifs(true); } }, 'Remind me tomorrow'),
+          el('button', { class: 'dc-btn', onclick: function () { finish(it); } }, 'Done'))));
+    });
+    if (list.length > 3) kids.push(el('button', { class: 'dc-btn', onclick: function () { board.view = 'type'; openBoard(); } }, '+' + (list.length - 3) + ' more on the board'));
+    kids.push(el('button', { class: 'dc-link', onclick: function () { state.muteUntil = Date.now() + 12 * 3600000; save(); renderNotifs(); } }, 'Mute for today'));
+    box.replaceChildren.apply(box, kids);
+  }
+  setInterval(function () { renderNotifs(); }, 5 * 60 * 1000);
 
   /* ---------- launcher + drawer ---------- */
   function drawer() {
@@ -263,7 +319,7 @@
     return el('div', {}, track, el('div', { class: 'dc-card' },
       el('div', { class: 'dc-hint' }, 'Just this one. ' + left + ' left.'),
       el('span', { class: 'dc-badge', 'data-c': it.category }, BADGE[it.category]),
-      it.box ? el('span', { class: 'dc-badge dc-p', 'data-p': it.box }, boxTitle(it.box)) : null,
+      boxNow(it) ? el('span', { class: 'dc-badge dc-p', 'data-p': boxNow(it) }, boxTitle(boxNow(it))) : null,
       el('h3', {}, it.subject),
       el('div', { class: 'dc-who' }, it.fromName + ' · ' + (age(it) ? age(it) + ' days ago' : 'today')),
       el('p', { class: 'dc-snip' }, it.snippet),
@@ -368,13 +424,14 @@
     { id: 'newsletter', title: 'Newsletters', group: true }, { id: 'receipt', title: 'Receipts & bills', group: false },
     { id: 'notification', title: 'Notifications', group: true }
   ];
-  function closeBoard() { var b = document.getElementById('dc-board'); if (b) b.remove(); }
+  function closeBoard() { var b = document.getElementById('dc-board'); if (b) b.remove(); renderNotifs(); }
   function openBoard() {
     if (document.getElementById('dc-board')) return closeBoard();
     var d = drawer(); d.classList.remove('dc-open');
     var b = el('div', { id: 'dc-board', role: 'dialog', 'aria-label': 'Declutter board' },
       el('div', { id: 'dc-board-head' }), el('div', { id: 'dc-panels' }));
     document.body.append(b);
+    renderNotifs();
     renderBoardHead(); renderPanels();
   }
   function matches(it) {
@@ -395,7 +452,7 @@
     var q = document.getElementById('dc-q'), keep = q && document.activeElement === q;
     h.replaceChildren(
       el('h2', {}, 'Declutter board'),
-      el('div', { class: 'dc-seg', role: 'tablist' }, [['type', 'By type'], ['priority', 'By priority']].map(function (v) {
+      el('div', { class: 'dc-seg', role: 'tablist' }, [['type', 'By type'], ['priority', 'By priority'], ['company', 'By company']].map(function (v) {
         return el('button', { class: 'dc-seg-btn', role: 'tab', 'aria-selected': String(board.view === v[0]), onclick: function () { board.view = v[0]; renderBoardHead(); renderPanels(); } }, v[1]);
       })),
       el('input', { id: 'dc-q', type: 'search', placeholder: 'Search sender, subject…', value: board.q, 'aria-label': 'Search',
@@ -408,6 +465,7 @@
       el('label', { class: 'dc-check' }, el('input', { id: 'dc-unread', type: 'checkbox', checked: board.unread ? 'checked' : null,
         onchange: function (e) { board.unread = e.target.checked; renderPanels(); } }), 'Unread only'),
       el('span', { class: 'dc-status' }, status),
+      el('button', { class: 'dc-btn', onclick: openExport }, 'Auto-sort filters'),
       scanning ? el('button', { class: 'dc-btn', onclick: function () { scanning.stop = true; } }, 'Stop')
         : el('button', { class: 'dc-btn dc-primary', onclick: scanAll }, 'Scan whole inbox'),
       el('button', { class: 'dc-x', 'aria-label': 'Close board', onclick: closeBoard }, '×'));
@@ -416,6 +474,8 @@
   function renderPanels() {
     var wrap = document.getElementById('dc-panels'); if (!wrap) return;
     if (board.results) { wrap.replaceChildren(resultsPanel()); return; }
+    wrap.setAttribute('data-view', board.view);
+    if (board.view === 'company') { wrap.replaceChildren.apply(wrap, companyView()); return; }
     var defs = board.view === 'priority'
       ? PRIORITY.map(function (x) { return { id: x.id, title: x.title, group: x.id === 'p3' }; }) : PANELS;
     wrap.replaceChildren.apply(wrap, defs.map(function (pn) {
@@ -429,7 +489,7 @@
             el('b', {}, it.subject),
             el('small', {}, (pn.id === 'waiting' ? 'To ' : '') + it.fromName + ' · ' + (age(it) ? age(it) + 'd' : 'today')),
             it.snippet ? el('small', { class: 'dc-clip' }, it.snippet) : null),
-          el('div', { class: 'dc-item-side' }, it.box ? el('span', { class: 'dc-badge dc-p', 'data-p': it.box }, boxTitle(it.box, true)) : null,
+          el('div', { class: 'dc-item-side' }, boxNow(it) ? el('span', { class: 'dc-badge dc-p', 'data-p': boxNow(it) }, boxTitle(boxNow(it), true)) : null,
             it.quick ? el('span', { class: 'dc-badge dc-quick' }, '2 min') : null,
             board.view === 'priority' ? el('span', { class: 'dc-badge', 'data-c': it.category }, BADGE[it.category]) : null,
             el('button', { class: 'dc-btn', onclick: function () { finish(it); } }, 'Done')));
@@ -455,6 +515,77 @@
         el('button', { class: 'dc-btn', onclick: function () { board.results = null; board.q = ''; renderBoardHead(); renderPanels(); } }, 'Clear')),
       el('div', { class: 'dc-panel-body' }, body));
   }
+  function emailRow(it) {
+    return el('div', { class: 'dc-item' },
+      el('div', { class: 'dc-item-main', onclick: function () { open(it); } },
+        el('b', {}, it.subject), el('small', {}, it.fromName + ' · ' + (age(it) ? age(it) + 'd' : 'today')),
+        it.snippet ? el('small', { class: 'dc-clip' }, it.snippet) : null),
+      el('div', { class: 'dc-item-side' }, boxNow(it) ? el('span', { class: 'dc-badge dc-p', 'data-p': boxNow(it) }, boxTitle(boxNow(it), true)) : null,
+        el('span', { class: 'dc-badge', 'data-c': it.category }, BADGE[it.category]),
+        el('button', { class: 'dc-btn', onclick: function () { finish(it); } }, 'Done')));
+  }
+  /** Two panels: every website/company that emails you, and the emails of the selected one. */
+  function companyView() {
+    var groups = {};
+    pool('websites').filter(matches).forEach(function (it) {
+      if (!it.company) return;
+      var g = groups[it.company] || (groups[it.company] = { name: it.company, domain: it.domain, items: [] }); g.items.push(it);
+    });
+    var list = Object.keys(groups).map(function (k) { return groups[k]; }).sort(function (a, b) { return b.items.length - a.items.length; });
+    var sel = board.company && groups[board.company] ? board.company : (list[0] && list[0].name);
+    var left = el('section', { class: 'dc-panel', 'data-c': 'companies' },
+      el('header', {}, el('h3', {}, 'Companies & websites'), el('span', { class: 'dc-n' }, list.length)),
+      el('div', { class: 'dc-panel-body' }, list.length ? list.map(function (g) {
+        var pinned = state.pinned.indexOf(g.name) >= 0;
+        return el('div', { class: 'dc-item' + (g.name === sel ? ' dc-sel' : '') },
+          el('div', { class: 'dc-item-main', onclick: function () { board.company = g.name; renderPanels(); } },
+            el('b', {}, g.name), el('small', {}, g.items.length + ' email' + (g.items.length > 1 ? 's' : '') + (g.domain ? ' · ' + g.domain : ''))),
+          el('div', { class: 'dc-item-side' }, el('button', { class: 'dc-btn', 'aria-pressed': String(pinned), onclick: function () {
+            state.pinned = pinned ? state.pinned.filter(function (n) { return n !== g.name; }) : state.pinned.concat([g.name]);
+            save(); var bar = document.getElementById('dc-bar'); if (bar) bar.removeAttribute('data-sig'); paint(); } }, pinned ? 'Unpin filter' : 'Pin as filter')));
+      }) : el('div', { class: 'dc-empty' }, 'Scan your inbox to see companies')));
+    var g = sel ? groups[sel] : null;
+    var right = el('section', { class: 'dc-panel', 'data-c': 'company-emails' },
+      el('header', {}, el('h3', {}, g ? g.name : 'Emails'), el('span', { class: 'dc-n' }, g ? g.items.length : 0),
+        g ? el('button', { class: 'dc-btn', onclick: function () { g.items.forEach(function (it) { state.done[it.key] = Date.now(); }); save(); paint(); } }, 'Hide all') : null),
+      el('div', { class: 'dc-panel-body' }, g ? g.items.slice(0, 200).map(emailRow) : el('div', { class: 'dc-empty' }, 'Nothing here')));
+    return [left, right];
+  }
+
+  /* ---------- auto-sort filters: a Gmail filter file you import once ---------- */
+  function filterCompanies() {
+    var map = {};
+    Object.keys(archive).forEach(function (k) {
+      var it = archive[k]; if (!isWeb(it) || !it.domain) return;
+      var g = map[it.domain] || (map[it.domain] = { name: it.company, domain: it.domain, count: 0 }); g.count++;
+    });
+    return Object.keys(map).map(function (k) { return map[k]; }).sort(function (a, b) { return b.count - a.count; });
+  }
+  function downloadFilters(skipInbox) {
+    var xml = filtersToXml(gmailFilterRules(filterCompanies(), { skipInbox: skipInbox }));
+    var url = URL.createObjectURL(new Blob([xml], { type: 'application/xml' }));
+    var a = el('a', { href: url, download: 'declutter-gmail-filters.xml' });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
+  }
+  function openExport() {
+    var old = document.getElementById('dc-modal'); if (old) old.remove();
+    var rules = gmailFilterRules(filterCompanies(), {});
+    var skip = el('input', { id: 'dc-skip', type: 'checkbox' });
+    var m = el('div', { id: 'dc-modal', role: 'dialog', 'aria-label': 'Auto-sort filters' },
+      el('div', { class: 'dc-modal-card' },
+        el('h3', {}, 'Store new emails in categories automatically'),
+        el('p', {}, 'Declutter can only recolor what you open. Gmail filters work on every new email the moment it arrives, even when Gmail is closed. This file holds ' + rules.length + ' filters (LinkedIn, newsletters, notifications, receipts, urgent words, and ' + (rules.length - 5) + ' companies from your scan). Each one adds a Declutter/ label.'),
+        el('ol', {}, el('li', {}, 'Click Download file.'),
+          el('li', {}, 'In Gmail click the gear, then See all settings, then Filters and Blocked Addresses, then Import filters.'),
+          el('li', {}, 'Choose the file, click Open file, tick Apply new filters to existing email, then Create filters.')),
+        el('label', { class: 'dc-check' }, skip, 'Also skip the inbox for newsletters and notifications (they stay in their label)'),
+        el('div', { class: 'dc-actions' },
+          el('button', { class: 'dc-btn dc-primary', onclick: function () { downloadFilters(skip.checked); } }, 'Download file'),
+          el('button', { class: 'dc-btn', onclick: function () { m.remove(); } }, 'Close'))));
+    document.body.append(m);
+  }
+
   function groupedRows(pn, items) {
     var map = {};
     items.forEach(function (it) { var g = map[it.fromEmail] || (map[it.fromEmail] = { name: it.fromName, email: it.fromEmail, items: [] }); g.items.push(it); });
@@ -472,7 +603,7 @@
     if (!observer) observer = new MutationObserver(function (muts) {
       var foreign = muts.some(function (m) {
         var t = m.target.nodeType === 1 ? m.target : m.target.parentElement;
-        return t && !t.closest('#dc-bar, #dc-drawer, #dc-launch, #dc-board, .dc-badges');
+        return t && !t.closest('#dc-bar, #dc-drawer, #dc-launch, #dc-board, #dc-notifs, #dc-modal, .dc-badges');
       });
       if (!foreign) return;
       clearTimeout(timer); timer = setTimeout(runScan, 350);
