@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#7965dc"><title>Orbit · Your people, your next step</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="stylesheet" href="style.css"></head>
+<body>
+<aside class="sidebar">
+ <a class="brand" href="#"><span class="brand-icon">o</span>orbit<span class="brand-dot">.</span></a>
+ <div class="workspace-name">ELENA’S WORKSPACE <span>LOCAL</span></div>
+ <nav id="boards" aria-label="Boards"></nav><button id="new-board" class="subtle full">＋ New board</button>
+ <div class="nav-divider"></div><button class="nav-item" id="people-nav"><span>◎</span> People database <b id="people-count">0</b></button><button class="nav-item" id="journal-nav"><span>▤</span> Journal</button>
+ <button class="nav-item" id="capture-nav"><span>✧</span> Quick capture</button><button class="nav-item" id="import-nav"><span>↓</span> Import & connections</button>
+ <div class="sidebar-bottom"><div class="buddy" id="buddy"><div class="cat" aria-hidden="true">🐱</div><p id="buddy-message">A small step counts.</p><span id="xp">0 little wins</span></div><button id="backup" class="subtle full">↗ Export private backup</button><small id="save-status">Saved on this device</small></div>
+</aside>
+<div class="shell">
+ <header><div><div class="breadcrumb">MY WORKSPACE <span>/</span> <span id="crumb">Networking</span></div><h1 id="board-title">People & possibilities</h1></div><div class="header-actions"><button id="search-toggle" class="circle" title="Search people" aria-label="Search people">⌕</button><button id="focus-open" class="focus-button">◷ Follow-up sprint</button><button id="add-person" class="primary">＋ Add person</button></div></header>
+ <div class="board-strip"><span id="board-caption">A place for the people you want to keep in your orbit.</span><div><span class="private-dot"></span> Private on this device <span class="divider">|</span><button id="help" class="text-button">How to use</button></div></div>
+ <main id="viewport" aria-label="Infinite board"><div id="world"><svg id="edges" aria-hidden="true"></svg><div id="nodes"></div></div>
+  <div id="empty-board" hidden><h2>Make room for an idea.</h2><p>Add a sticky note, task or person. Your board grows with you.</p></div>
+  <div class="floating-tools" role="toolbar" aria-label="Board tools">
+   <button data-tool="select" class="active" title="Select (V)" aria-label="Select">↖</button>
+   <button data-tool="hand" title="Pan (H or hold Space)" aria-label="Pan">✋</button><i></i>
+   <button data-tool="sticky" title="Sticky note (N)" aria-label="Add sticky note">▣</button>
+   <button data-tool="task" title="Task (T)" aria-label="Add task">☑</button>
+   <button data-tool="person" title="Person (P)" aria-label="Add person card">◎</button>
+   <button data-tool="frame" title="Frame (F)" aria-label="Add frame">▢</button>
+   <button data-tool="connect" title="Connect two cards (C)" aria-label="Connect cards">↗</button>
+   <button data-tool="pen" title="Freehand drawing (D)" aria-label="Draw">✎</button><i></i>
+   <button id="undo" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button><button id="redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">↷</button>
+  </div>
+  <div class="zoom-tools"><button id="zoom-out" aria-label="Zoom out">−</button><span id="zoom-label">90%</span><button id="zoom-in" aria-label="Zoom in">＋</button><i></i><button id="fit">Fit</button><button id="home-view">Home</button></div>
+  <div class="canvas-hint" id="canvas-hint">Drag cards · Space + drag to move around · Ctrl + scroll to zoom</div>
+ </main>
+ <section id="list-view" hidden></section><section id="journal-view" hidden></section>
+</div>
+<aside id="inspector" hidden aria-label="Edit selected card"></aside>
+<dialog id="capture-dialog"><form id="capture-form">
+ <div class="dialog-heading"><div><span class="eyebrow">A TEN-SECOND NOTE IS ENOUGH</span><h2>Keep the connection.</h2></div><button type="button" class="close-dialog circle" aria-label="Close">×</button></div>
+ <div class="capture-options"><button type="button" id="badge-upload">▧ Badge photo</button><button type="button" id="scan-qr">▦ LinkedIn QR</button></div>
+ <label>Paste a profile or quick note<textarea id="capture-text" placeholder="Name: Anna Smith&#10;Company: Studio North&#10;Role: Creative director&#10;https://linkedin.com/in/…&#10;Met at DICE. Talked about virtual production." rows="4"></textarea></label>
+ <button type="button" id="parse-capture" class="subtle">Fill fields from note</button>
+ <div class="two-col"><label>Name<input id="cap-name" required autocomplete="off"></label><label>Company<input id="cap-company"></label><label>Role<input id="cap-role"></label><label>Email<input id="cap-email" type="text" placeholder="Optional"></label></div>
+ <label>LinkedIn profile<input id="cap-linkedin" type="url" placeholder="https://www.linkedin.com/in/…"></label>
+ <div class="two-col"><label>Where did you meet?<input id="cap-event" placeholder="DICE, Gamescom, IBC…"></label><label>Next touch date<input id="cap-due" type="date"></label></div>
+ <label>What do you want to remember?<textarea id="cap-memo" rows="3" placeholder="Our conversation, shared interests, what I promised…"></textarea></label>
+ <label>One next step<input id="cap-action" placeholder="Send the slides / introduce them / propose a call"></label>
+ <div id="badge-preview"></div><p id="capture-status" aria-live="polite"></p>
+ <div class="dialog-footer"><label class="inline"><input type="checkbox" id="cap-timer"> Start a gentle 5-minute follow-up sprint</label><button class="primary" type="submit">Save person & add to board</button></div>
+</form></dialog>
+<dialog id="connections-dialog"><div class="dialog-heading"><div><span class="eyebrow">LESS COPYING. MORE CONNECTING.</span><h2>Bring your people here.</h2></div><button class="close-dialog circle" aria-label="Close">×</button></div>
+ <div class="connection-card"><span>📬</span><div><h3>Gmail → your board</h3><p>With the extension installed, open a conversation and click <b>Save thread to Orbit</b>. Review the contact and next step here. The board never sends mail.</p><button id="pull-gmail">Import captured Gmail threads</button></div></div>
+ <div class="connection-card"><span>in</span><div><h3>LinkedIn connections</h3><p>Import your Connections CSV. Existing contacts are matched by email, profile URL or name + company. For one person, paste the profile URL and a quick note.</p><button id="linkedin-import">Choose LinkedIn CSV</button><a href="https://www.linkedin.com/mypreferences/d/download-my-data" target="_blank" rel="noopener">Get your LinkedIn data ↗</a></div></div>
+ <div class="connection-card"><span>▧</span><div><h3>Conference badges & iCloud photos</h3><p>Choose downloaded JPG, PNG or WebP photos from iCloud Photos or your camera. Badge text is read on your device; confirm the suggested fields before saving. Export HEIC as JPG first.</p><button id="badge-import">Choose badge photo</button></div></div>
+ <div class="connection-card"><span>↗</span><div><h3>Review files & private backups</h3><p>Import the Gmail review JSON or an Orbit backup. Backups include contacts, board positions, notes, journal and attached photos. Keep them private.</p><button id="review-import">Choose review or backup JSON</button></div></div>
+ <p class="muted">No subscriptions or API key needed. Gmail capture uses your open Chrome tab. LinkedIn and iCloud imports use files you choose; they are not background account sync.</p><p id="connection-status" aria-live="polite"></p>
+</dialog>
+<dialog id="focus-dialog"><div class="dialog-heading"><div><span class="eyebrow">ONE PERSON. ONE SMALL STEP.</span><h2>Follow-up sprint</h2></div><button class="close-dialog circle" aria-label="Close">×</button></div>
+ <div class="focus-top"><span id="focus-position"></span><div><button id="timer-60">60 seconds</button><button id="timer-300">5 minutes</button><button id="timer-1500">25 minutes</button><button id="timer-pause">Pause</button><b id="focus-time">Ready</b></div></div>
+ <div id="focus-content"></div><div class="dialog-footer"><button id="focus-skip">Next person →</button><button id="focus-done" class="primary">✓ Mark handled</button></div><small>Copy a draft, open the original conversation and review it. “Handled” only updates this board. Nothing is sent or archived.</small>
+</dialog>
+<dialog id="qr-dialog"><div class="dialog-heading"><h2>Scan a LinkedIn QR</h2><button class="close-dialog circle" aria-label="Close">×</button></div><video id="qr-video" autoplay playsinline muted></video><p id="qr-status">Camera stays on this device.</p></dialog>
+<dialog id="help-dialog"><div class="dialog-heading"><h2>Your board, at your pace.</h2><button class="close-dialog circle" aria-label="Close">×</button></div><p>Pick a tool, then click the canvas to add a sticky, task or frame. Drag cards to arrange them; double-click to edit. Use Shift + click to select several cards, then drag or delete them together. Drag the bottom-right corner to resize.</p><p>Hold Space to pan. Ctrl + scroll zooms. Connect links two selected cards. Draw leaves a freehand sketch. Ctrl+Z undoes your last edit.</p><p>Keep notes about real conversations in People. Use the journal for ideas and daily reflections. The follow-up sprint provides a timer and an editable draft, with you choosing the next action.</p><p>Everything saves in this browser’s database. Export a private backup regularly. A hosted copy or another device has a separate database; use export/import to move your work.</p><p>This is an original Miro-style personal board. It supports the core canvas workflow; live team collaboration and automatic account sync are not included.</p></dialog>
+<input type="file" id="json-file" accept=".json,application/json" hidden><input type="file" id="csv-file" accept=".csv,text/csv" hidden><input type="file" id="photo-file" accept="image/jpeg,image/png,image/webp" hidden>
+<div id="toast" role="status"></div>
+<script src="core.js"></script><script src="vendor/tesseract.min.js"></script><script src="app.js"></script>
+</body></html>
