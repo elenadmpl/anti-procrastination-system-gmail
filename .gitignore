@@ -1,2 +1,7 @@
 node_modules/
 .clasp.json
+
+# Local private correspondence, exports and screenshots
+extension/workspace/private-review.json
+*private-backup*.json
+test/artifacts/

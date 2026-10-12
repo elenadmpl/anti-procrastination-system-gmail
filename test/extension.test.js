@@ -6,7 +6,7 @@ const X = p => fs.readFileSync(path.join(__dirname, '..', 'extension', p), 'utf8
   const b = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium' }).catch(() => chromium.launch());
   const p = await b.newPage({ viewport: { width: 1280, height: 780 } });
   const errs = []; p.on('pageerror', e => errs.push(e.message));
-  // freeze "now" so waiting times are deterministic: 2026-10-10 12:00 UTC
+  // freeze "now" so waiting times are deterministic: 2026-10-11 12:00 UTC
   const FREEZE = () => { const R = Date.now.bind(Date), off = Date.parse('2026-10-11T12:00:00Z') - R(); Date.now = () => R() + off; };
   await p.addInitScript(FREEZE);
   await p.goto('file://' + path.join(__dirname, 'mock-gmail.html'));
@@ -19,7 +19,7 @@ const X = p => fs.readFileSync(path.join(__dirname, '..', 'extension', p), 'utf8
   assert.deepStrictEqual(cats, ['reply', 'reply', 'reply', 'newsletter', 'newsletter', 'newsletter', 'receipt', 'notification', 'waiting', 'notification']);
   assert.strictEqual(await p.$$eval('.dc-badge', n => n.length) > 9, true);
   const boxes = await p.$$eval('tr.zA', rs => rs.map(r => r.getAttribute('data-dc-box')));
-  // Maria 9d and Clara 10d waiting -> red; Nikos 2d -> orange; promo ends today -> orange; bill -> green
+  // Maria 9d and Clara 11d waiting -> red; Nikos 2d -> orange; promo ends today -> orange; bill -> green
   assert.deepStrictEqual(boxes, ['p1', 'p2', 'p1', 'p3', 'p2', 'p3', 'p4', 'p3', '', 'p3']);
   const shown = async () => p.$$eval('tr.zA', rs => rs.filter(r => r.offsetParent).length);
   await p.click('.dc-chip:has-text("Important & urgent")'); assert.strictEqual(await shown(), 2);
@@ -31,7 +31,7 @@ const X = p => fs.readFileSync(path.join(__dirname, '..', 'extension', p), 'utf8
   await p.selectOption('.dc-select', 'GitHub'); assert.strictEqual(await shown(), 1);            // company drop-down
   // in-page notification: longest wait first
   assert.match(await p.textContent('#dc-notifs .dc-n-card'), /Clara is waiting for your reply/);
-  assert.match(await p.textContent('#dc-notifs .dc-n-card'), /10 days/);
+  assert.match(await p.textContent('#dc-notifs .dc-n-card'), /11 days/);
   await p.click('#dc-notifs .dc-btn:has-text("Remind me tomorrow")');
   assert.match(await p.textContent('#dc-notifs .dc-n-card'), /Maria is waiting for your reply/);
   await p.click('.dc-chip:has-text("All")');

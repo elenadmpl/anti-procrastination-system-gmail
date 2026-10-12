@@ -1,13 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Declutter for Gmail",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Sorts your Gmail inbox into Needs reply, Waiting, Newsletters, Receipts and Notifications, with a focus mode and bulk unsubscribe helper.",
   "permissions": ["storage"],
+  "action": { "default_title": "Open Orbit productivity board" },
+  "background": { "service_worker": "background.js" },
+  "content_security_policy": { "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },
   "content_scripts": [
     {
       "matches": ["https://mail.google.com/*"],
-      "js": ["logic.js", "content.js"],
+      "js": ["logic.js", "content.js", "board-bridge.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
     }

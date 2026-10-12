@@ -81,3 +81,7 @@ Heuristics, no AI calls (see `src/Logic.gs`): a real person's message you have n
 
 ## Develop
 `node test/logic.test.js` runs the pure-logic tests. Open `src/Dashboard.html` directly in a browser to preview the UI with demo data.
+
+## Orbit visual workspace
+
+The free personal canvas adds sticky notes, tasks, people profiles, a journal, conference badge OCR and follow-up sprints. Open **Open Orbit.cmd** on Windows, or run node preview-server.js. Click the extension toolbar to open the Gmail-connected board. See [ORBIT.md](ORBIT.md) for setup, privacy and current limits. Private correspondence and photos are kept out of this public repository.
