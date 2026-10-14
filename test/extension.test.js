@@ -15,6 +15,23 @@ const X = p => fs.readFileSync(path.join(__dirname, '..', 'extension', p), 'utf8
   await p.addScriptTag({ content: X('logic.js') });
   await p.addScriptTag({ content: X('content.js') });
   await p.waitForSelector('#dc-bar .dc-chip');
+  // ---- no flicker: Gmail sitting idle or churning must not make the extension repaint in a loop ----
+  const stat = () => p.evaluate(() => ({ ...window.__declutterStats, bars: document.querySelectorAll('#dc-bar').length }));
+  await p.waitForTimeout(1500);
+  let f0 = await stat(); await p.waitForTimeout(2500); let f1 = await stat();
+  assert.strictEqual(f1.paints - f0.paints, 0, 'idle Gmail must not trigger repaints');
+  await p.evaluate(() => { window.__t = setInterval(() => { const d = document.querySelector('.top'); d.append(document.createElement('i')); d.lastChild.remove(); }, 40); });
+  f0 = await stat(); await p.waitForTimeout(2500); f1 = await stat(); await p.evaluate(() => clearInterval(window.__t));
+  assert.strictEqual(f1.paints - f0.paints, 0, 'unrelated page churn must not trigger repaints');
+  await p.evaluate(() => { window.__r = setInterval(() => { const tb = document.getElementById('rows'), h = tb.innerHTML; tb.innerHTML = ''; tb.innerHTML = h; }, 300); });
+  f0 = await stat(); await p.waitForTimeout(3000); f1 = await stat(); await p.evaluate(() => clearInterval(window.__r));
+  assert.ok(f1.paints - f0.paints <= 5, 'list re-rendering is throttled, got ' + (f1.paints - f0.paints) + ' repaints in 3s');
+  await p.evaluate(() => { window.__x = setInterval(() => { const x = document.getElementById('dc-bar'); if (x) x.remove(); }, 400); });
+  f0 = await stat(); await p.waitForTimeout(3000); f1 = await stat(); await p.evaluate(() => clearInterval(window.__x));
+  assert.ok(f1.paints - f0.paints <= 2, 'removing the bar must not cause a repaint loop, got ' + (f1.paints - f0.paints));
+  await p.waitForTimeout(2500);
+  assert.strictEqual((await stat()).bars, 1, 'the same bar is restored once');
+  await p.waitForTimeout(700);
   const cats = await p.$$eval('tr.zA', rs => rs.map(r => r.getAttribute('data-dc-cat')));
   assert.deepStrictEqual(cats, ['reply', 'reply', 'reply', 'newsletter', 'newsletter', 'newsletter', 'receipt', 'notification', 'waiting', 'notification']);
   assert.strictEqual(await p.$$eval('.dc-badge', n => n.length) > 9, true);
@@ -64,6 +81,7 @@ const X = p => fs.readFileSync(path.join(__dirname, '..', 'extension', p), 'utf8
   await q.click('.dc-board-btn');
   await q.waitForSelector('#dc-board');
   assert.strictEqual(await q.$$eval('tr.zA', r => r.length), 50); // Gmail only shows one page
+  { const a = await q.evaluate(() => window.__declutterStats.paints); await q.waitForTimeout(2000); const z = await q.evaluate(() => window.__declutterStats.paints); assert.strictEqual(z - a, 0, 'an open board must not repaint while idle'); }
   await q.click('#dc-board-head .dc-btn:has-text("Scan whole inbox")');
   await q.waitForFunction(() => /full scan/.test(document.querySelector('.dc-status').textContent), null, { timeout: 40000 });
   assert.match(await q.textContent('.dc-status'), /130 emails known/);

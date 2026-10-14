@@ -34,10 +34,11 @@
   var board = { q: '', age: 0, unread: false, results: null, view: 'type' };
   var MAX_PAGES = 200;
   var notifOpen = true;
+  var stats = window.__declutterStats = { scans: 0, paints: 0 };   // read by tests to catch repaint loops
   var filter = 'all';
   var tab = 'focus';
   var skipped = {};
-  var observer = null, timer = null;
+  var observer = null, barNode = null;
 
   /* ---------- storage (falls back to memory when chrome.storage is unavailable) ---------- */
   var store = (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) ? chrome.storage.local : null;
@@ -119,6 +120,8 @@
     return !!(s && s > Date.now());
   }
   function runScan() {
+    stats.scans++;
+    lastScanAt = Date.now(); recentScans.push(lastScanAt);
     var rows = document.querySelectorAll(ROW_SEL.row);
     var me = myEmail(), gcat = activeGmailTab();
     scan = [];
@@ -156,6 +159,7 @@
 
   /* ---------- decorating Gmail's list ---------- */
   function paint() {
+    stats.paints++;
     if (observer) observer.disconnect();
     try {
       scan.forEach(function (it) {
@@ -194,40 +198,53 @@
     return Object.keys(map).map(function (k) { return map[k]; }).sort(function (a, b) { return b.items.length - a.items.length; });
   }
   function chip(id, title, dotVar) {
-    return el('button', { class: 'dc-chip', 'aria-pressed': String(filter === id), onclick: function () { setFilter(filter === id && id !== 'all' ? 'all' : id); } },
+    return el('button', { class: 'dc-chip', 'data-id': id, 'aria-pressed': String(filter === id), onclick: function () { setFilter(filter === id && id !== 'all' ? 'all' : id); } },
       dotVar ? el('span', { class: 'dc-dot', style: 'background:var(--dc-' + dotVar + ')' }) : null,
       title, el('span', { class: 'dc-n' }, visible(id).length));
   }
+  /** Build the bar once; afterwards only numbers and pressed states change, in place, so nothing flashes. */
   function renderBar() {
     var main = document.querySelector(ROW_SEL.main);
     if (!main) return;
     var bar = document.getElementById('dc-bar');
-    if (!bar) { bar = el('div', { id: 'dc-bar' }); main.insertBefore(bar, main.firstChild); }
+    if (!bar) {
+      bar = barNode || el('div', { id: 'dc-bar' });
+      barNode = bar;
+      main.insertBefore(bar, main.firstChild);
+    }
     var companies = companyList().slice(0, 25);
-    var waiting = waitingOnYou().length;
-    var sig = CATS.concat([WEBSITES], PRIORITY).map(function (c) { return visible(c.id).length; }).join(',') + filter +
-      state.pinned.map(function (n) { return n + visible('co:' + n).length; }).join(',') + companies.map(function (c) { return c.name + c.items.length; }).join(',') + '|' + waiting;
-    if (bar.getAttribute('data-sig') === sig) return;
-    bar.setAttribute('data-sig', sig);
-    var kids = [el('span', { class: 'dc-label' }, 'Declutter')];
-    CATS.forEach(function (c) { kids.push(chip(c.id, c.title, c.id !== 'all' && c.id !== 'quick' ? c.id : null)); });
-    kids.push(el('span', { class: 'dc-sep' }));
-    PRIORITY.forEach(function (c) { kids.push(chip(c.id, c.title, c.id)); });
-    kids.push(el('span', { class: 'dc-sep' }));
-    kids.push(chip('websites', 'Websites', 'websites'));
-    state.pinned.forEach(function (n) { kids.push(chip('co:' + n, n, 'websites')); });
-    kids.push(el('select', { class: 'dc-select', 'aria-label': 'Filter by company', onchange: function (e) { if (e.target.value) setFilter('co:' + e.target.value); } },
-      [el('option', { value: '' }, 'Company…')].concat(companies.map(function (c) {
-        return el('option', { value: c.name, selected: filter === 'co:' + c.name ? 'selected' : null }, c.name + ' (' + c.items.length + ')'); }))));
-    kids.push(el('button', { class: 'dc-chip dc-bell', onclick: function () { notifOpen = true; state.muteUntil = 0; save(); renderNotifs(true); } }, '🔔 ' + waiting + ' waiting for you'));
-    kids.push(el('button', { class: 'dc-chip dc-board-btn', onclick: openBoard }, 'Open board ⤢'));
-    bar.replaceChildren.apply(bar, kids);
+    var struct = state.pinned.join('|') + '#' + companies.map(function (c) { return c.name; }).join('|');
+    if (bar.getAttribute('data-struct') !== struct) {
+      bar.setAttribute('data-struct', struct);
+      var kids = [el('span', { class: 'dc-label' }, 'Declutter')];
+      CATS.forEach(function (c) { kids.push(chip(c.id, c.title, c.id !== 'all' && c.id !== 'quick' ? c.id : null)); });
+      kids.push(el('span', { class: 'dc-sep' }));
+      PRIORITY.forEach(function (c) { kids.push(chip(c.id, c.title, c.id)); });
+      kids.push(el('span', { class: 'dc-sep' }));
+      kids.push(chip('websites', 'Websites', 'websites'));
+      state.pinned.forEach(function (n) { kids.push(chip('co:' + n, n, 'websites')); });
+      kids.push(el('select', { class: 'dc-select', 'aria-label': 'Filter by company', onchange: function (e) { if (e.target.value) setFilter('co:' + e.target.value); } },
+        [el('option', { value: '' }, 'Company…')].concat(companies.map(function (c) { return el('option', { value: c.name }, c.name); }))));
+      kids.push(el('button', { class: 'dc-chip dc-bell', 'data-id': 'bell', onclick: function () { notifOpen = true; state.muteUntil = 0; save(); renderNotifs(true); } }, ''));
+      kids.push(el('button', { class: 'dc-chip dc-board-btn', onclick: openBoard }, 'Open board ⤢'));
+      bar.replaceChildren.apply(bar, kids);
+    }
+    bar.querySelectorAll('.dc-chip[data-id]').forEach(function (c) {
+      var id = c.getAttribute('data-id');
+      if (id === 'bell') { var t = '🔔 ' + waitingOnYou().length + ' waiting for you'; if (c.textContent !== t) c.textContent = t; return; }
+      var pressed = String(filter === id); if (c.getAttribute('aria-pressed') !== pressed) c.setAttribute('aria-pressed', pressed);
+      var n = c.querySelector('.dc-n'), v = String(visible(id).length); if (n && n.textContent !== v) n.textContent = v;
+    });
+    var sel = bar.querySelector('.dc-select');
+    if (sel) {
+      var want = filter.indexOf('co:') === 0 ? filter.slice(3) : '';
+      if (sel.value !== want && !(sel === document.activeElement)) sel.value = want;
+    }
   }
   function setFilter(id) {
     filter = id;
     if (id === 'all') document.documentElement.removeAttribute('data-dc-filter');
     else document.documentElement.setAttribute('data-dc-filter', id.indexOf('co:') === 0 ? 'company' : id);
-    var bar = document.getElementById('dc-bar'); if (bar) bar.removeAttribute('data-sig');
     paint();
   }
 
@@ -542,7 +559,7 @@
             el('b', {}, g.name), el('small', {}, g.items.length + ' email' + (g.items.length > 1 ? 's' : '') + (g.domain ? ' · ' + g.domain : ''))),
           el('div', { class: 'dc-item-side' }, el('button', { class: 'dc-btn', 'aria-pressed': String(pinned), onclick: function () {
             state.pinned = pinned ? state.pinned.filter(function (n) { return n !== g.name; }) : state.pinned.concat([g.name]);
-            save(); var bar = document.getElementById('dc-bar'); if (bar) bar.removeAttribute('data-sig'); paint(); } }, pinned ? 'Unpin filter' : 'Pin as filter')));
+            save(); paint(); } }, pinned ? 'Unpin filter' : 'Pin as filter')));
       }) : el('div', { class: 'dc-empty' }, 'Scan your inbox to see companies')));
     var g = sel ? groups[sel] : null;
     var right = el('section', { class: 'dc-panel', 'data-c': 'company-emails' },
@@ -599,17 +616,41 @@
   }
 
   /* ---------- wiring ---------- */
+  /* Only real changes to Gmail's email rows start a rescan. Our own nodes, clocks, status dots and
+     style churn are ignored, and rescans are throttled so a busy Gmail can never cause a repaint storm. */
+  function isOurs(n) {
+    return n.nodeType === 1 && ((n.id && n.id.indexOf('dc-') === 0) || (typeof n.className === 'string' && n.className.indexOf('dc-') >= 0));
+  }
+  function touchesRows(n) {
+    if (n.nodeType !== 1 || isOurs(n)) return false;
+    var t = n.nodeName;
+    if (t === 'TR') return n.classList.contains('zA');
+    if (t === 'TBODY' || t === 'TABLE') return true;
+    return !!(n.getElementsByClassName && n.getElementsByClassName('zA').length);
+  }
+  var pending = null, lastScanAt = 0, recentScans = [];
+  function scheduleScan(delay) {
+    if (pending) return;                                   // one scan queued at a time (no starvation, no pile-up)
+    var now = Date.now();
+    recentScans = recentScans.filter(function (t) { return now - t < 10000; });
+    var wait = Math.max(delay, lastScanAt + 700 - now);   // at most about one scan per 0.7s
+    if (recentScans.length >= 5) wait = Math.max(wait, 4000); // still busy after 5 scans in 10s: back off
+    pending = setTimeout(function () { pending = null; runScan(); }, wait);
+  }
   function observe() {
     if (!observer) observer = new MutationObserver(function (muts) {
-      var foreign = muts.some(function (m) {
-        var t = m.target.nodeType === 1 ? m.target : m.target.parentElement;
-        return t && !t.closest('#dc-bar, #dc-drawer, #dc-launch, #dc-board, #dc-notifs, #dc-modal, .dc-badges');
+      var rowsChanged = muts.some(function (m) {
+        return Array.prototype.some.call(m.addedNodes, touchesRows) || Array.prototype.some.call(m.removedNodes, touchesRows);
       });
-      if (!foreign) return;
-      clearTimeout(timer); timer = setTimeout(runScan, 350);
+      if (rowsChanged) scheduleScan(150);
     });
     observer.observe(document.body, { childList: true, subtree: true });
   }
-  window.addEventListener('hashchange', function () { clearTimeout(timer); timer = setTimeout(runScan, 500); });
+  // If Gmail rebuilds its main pane and drops our bar, put the same bar back quietly (no rescan, no repaint).
+  setInterval(function () {
+    var main = document.querySelector(ROW_SEL.main);
+    if (main && barNode && !document.getElementById('dc-bar')) main.insertBefore(barNode, main.firstChild);
+  }, 2000);
+  window.addEventListener('hashchange', function () { scheduleScan(500); });
   load(function () { runScan(); observe(); });
 })();
