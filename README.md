@@ -16,6 +16,15 @@ Every email also gets a priority color, shown as a colored stripe and tag on the
 * 🟢 **Important, not urgent**: a real person writing to you without urgent wording, or a normal bill. Plan these.
 The rules are in `priorityBox()` and the regexes at the top of `src/Logic.gs`.
 
+## Groups, auto-move and Gmail sync (the ⚙ Rules box)
+Click **⚙ Rules** in the bar. Every group (Subscriptions, LinkedIn, Receipts & bills, Notifications, plus any you add) has:
+* **Auto-move switch.** On: emails that match the group leave your main list and live under the group's chip (the chip shows ⇢). Off: they come back. Subscriptions is on by default. A master switch at the top pauses every group. Nothing is deleted or archived in Gmail by this.
+* **Rules.** Declutter's own detection (tick or untick), plus your own senders/websites (`acme.io, news@shop.com, Dana`) and subject words (`contract, "price list"`). **Add group** makes your own. A manual **Move to…** on any email in the board overrides the rules for that email.
+* **What Gmail does at the same time.** Declutter only; Also label it in Gmail; or Label it in Gmail and move it out of the inbox. This is carried out by Gmail filters: **Gmail filters…** builds the file from your settings, you import it once (Gmail gear, See all settings, Filters and Blocked Addresses, Import filters, tick "Apply new filters to existing email"), and from then on Gmail labels and moves each new email the moment it arrives. After you change a sync setting, **⚙ Rules •** shows a dot until you download and import the new file. Declutter cannot change labels inside Gmail by itself, because that needs Google's Gmail API; moves inside Declutter are instant, the Gmail side is done by the filters.
+
+## Line colors
+Every email line is tinted. In **⚙ Rules → Line colors** choose to color by **Priority** (red, green, orange, yellow, and you pick each color), by **Group** (each group's own color), or turn it off. To color a single email by hand, click the small round color dot next to its subject: pick one of 9 colors, any color, No color, or Automatic.
+
 ## Waiting time, alerts, companies and auto-sort
 * **The longer someone waits, the redder it gets.** An email from a real person you have not answered turns 🟠 orange after 2 days and 🔴 red after 7 days (`agingBox()` in `src/Logic.gs`). It updates every day without a rescan.
 * **"Luke is waiting for your reply."** A card appears inside Gmail (bottom left) for everyone waiting 2+ days, longest wait first, with Reply, Remind me tomorrow and Done. The 🔔 chip shows the count and brings the card back; Mute for today hides it for 12 hours.

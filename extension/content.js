@@ -27,7 +27,8 @@
   ];
   var BADGE = { reply: 'Reply', waiting: 'Waiting', newsletter: 'Newsletter', receipt: 'Receipt', notification: 'Notice' };
 
-  var state = { done: {}, snooze: {}, days: {}, pinned: ['LinkedIn'], notifSnooze: {}, muteUntil: 0 };
+  var state = { done: {}, snooze: {}, days: {}, pinned: [], notifSnooze: {}, muteUntil: 0, groups: null, assign: {}, autoPaused: false, exportedSig: '',
+    colorBy: 'priority', colors: { p1: '#d93025', p2: '#e8710a', p3: '#f9ab00', p4: '#188038' }, rowColors: {} };
   var scan = [];            // items for rows currently on screen (hold DOM refs)
   var archive = {};         // key -> plain item for every email seen or scanned (survives page changes)
   var scanning = null;      // {stop, count, page} while "Scan whole inbox" is running
@@ -43,12 +44,22 @@
   /* ---------- storage (falls back to memory when chrome.storage is unavailable) ---------- */
   var store = (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) ? chrome.storage.local : null;
   function load(cb) {
-    if (!store) return cb();
+    if (!store) { ensureGroups(); return cb(); }
     store.get(['declutter', 'declutterArchive'], function (r) {
       if (r && r.declutter) state = Object.assign(state, r.declutter);
       if (r && r.declutterArchive) archive = r.declutterArchive;
+      ensureGroups();
       cb();
     });
+  }
+  function ensureGroups() {
+    if (!state.groups || !state.groups.length) state.groups = defaultGroups();
+    if (!state.assign) state.assign = {};
+    if (!state.rowColors) state.rowColors = {};
+    state.colors = Object.assign({ p1: '#d93025', p2: '#e8710a', p3: '#f9ab00', p4: '#188038' }, state.colors || {});
+    applyColors();
+    // LinkedIn now has its own group, so drop the older pinned LinkedIn chip
+    if (state.groups.some(function (g) { return g.id === 'linkedin'; })) state.pinned = (state.pinned || []).filter(function (n) { return n !== 'LinkedIn'; });
   }
   function save() { if (store) store.set({ declutter: state }); }
   var saveTimer = null;
@@ -137,12 +148,75 @@
   }
   function age(it) { return Math.max(0, Math.floor((Date.now() - it.ts) / 86400000)); }
   /** Everything we know about (current page + earlier pages + full scan), minus done/snoozed. */
+  /* ---------- line colors: automatic (by priority or group, your colors) or picked by hand per email ---------- */
+  var PALETTE = ['#d93025', '#e8710a', '#f9ab00', '#188038', '#1a73e8', '#8e4ec6', '#d81b60', '#00897b', '#546e7a'];
+  function rgbOf(hex) {
+    var h = String(hex || '#888888').replace('#', '');
+    if (h.length === 3) h = h.split('').map(function (c) { return c + c; }).join('');
+    var n = parseInt(h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function rgba(hex, a) { var c = rgbOf(hex); return 'rgba(' + c[0] + ', ' + c[1] + ', ' + c[2] + ', ' + a + ')'; }
+  function inkFor(hex) { var c = rgbOf(hex); return (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) > 160 ? '#202124' : '#ffffff'; }
+  /** Pushes the four priority colors into the CSS variables used by chips, badges, alerts and the board. */
+  function applyColors() {
+    var root = document.documentElement;
+    ['p1', 'p2', 'p3', 'p4'].forEach(function (k) {
+      var c = state.colors[k];
+      root.style.setProperty('--dc-' + k, c); root.style.setProperty('--dc-' + k + '-bg', c);
+      root.style.setProperty('--dc-' + k + '-ink', inkFor(c)); root.style.setProperty('--dc-' + k + '-tint', rgba(c, 0.18));
+    });
+  }
+  /** The color of one email line: a color you picked for that email, else by priority or group, else none. */
+  function rowColor(it) {
+    var manual = state.rowColors[it.key];
+    if (manual) return manual === 'none' ? '' : manual;
+    if (state.colorBy === 'priority') return state.colors[boxNow(it)] || '';
+    if (state.colorBy === 'group') { var g = groupById(groupOf(it)); return g ? g.color : ''; }
+    return '';
+  }
+  function closePalette() { var o = document.getElementById('dc-pop'); if (o) o.remove(); document.removeEventListener('mousedown', outsidePalette, true); }
+  function outsidePalette(e) { var o = document.getElementById('dc-pop'); if (o && !o.contains(e.target)) closePalette(); }
+  function openPalette(it, anchor) {
+    closePalette();
+    var r = anchor.getBoundingClientRect();
+    var pick = function (v) { if (v === null) delete state.rowColors[it.key]; else state.rowColors[it.key] = v; save(); paint(); closePalette(); };
+    var cur = rowColor(it) || '#888888';
+    var pop = el('div', { id: 'dc-pop', role: 'dialog', 'aria-label': 'Choose a color for this email' },
+      el('div', { class: 'dc-pop-title' }, 'Color of this line'),
+      el('div', { class: 'dc-swatches' }, PALETTE.map(function (c) {
+        return el('button', { class: 'dc-swatch', style: 'background:' + c, title: c, 'aria-label': 'Color ' + c, onclick: function (e) { e.stopPropagation(); pick(c); } }); })),
+      el('div', { class: 'dc-pop-row' },
+        el('label', { class: 'dc-muted' }, 'Any color ', el('input', { type: 'color', value: /^#[0-9a-f]{6}$/i.test(cur) ? cur : '#888888', onchange: function (e) { pick(e.target.value); } })),
+        el('button', { class: 'dc-link', onclick: function (e) { e.stopPropagation(); pick('none'); } }, 'No color'),
+        el('button', { class: 'dc-link', onclick: function (e) { e.stopPropagation(); pick(null); } }, 'Automatic')));
+    pop.style.top = Math.min(r.bottom + 6, window.innerHeight - 190) + 'px';
+    pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 250)) + 'px';
+    document.body.append(pop);
+    setTimeout(function () { document.addEventListener('mousedown', outsidePalette, true); }, 0);
+  }
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePalette(); });
+  // One delegated handler (capture phase) for every line's color circle: it survives Gmail re-rendering or cloning rows,
+  // and it runs before Gmail's own click handling so the email does not open.
+  document.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('.dc-pick') : null;
+    if (!b) return;
+    e.stopPropagation(); e.preventDefault();
+    var tr = b.closest('tr.zA');
+    var it = scan.filter(function (x) { return x.row === tr; })[0];
+    if (it) openPalette(it, b);
+  }, true);
+
+  function groupById(id) { return (state.groups || []).filter(function (g) { return g.id === id; })[0]; }
+  function groupOf(it) { return assignGroup(state.groups || [], state.assign || {}, it); }
+  /** Moved = its group has automatic moving ON (and moving is not paused). It leaves the main list and lives in its group. */
+  function isMoved(it) { var g = groupById(groupOf(it)); return !!(g && g.autoMove && !state.autoPaused); }
   function isWeb(it) { return it.category === 'newsletter' || it.category === 'receipt' || it.category === 'notification'; }
   /** Priority box right now: waiting time escalates mail from real people (7+ days red, 2-6 days orange). */
   function boxNow(it) { return agingBox(it.category, it.base !== undefined ? it.base : boxNow(it), age(it)); }
   function matchCat(it, cat) {
     if (cat === 'all') return true;
     if (cat === 'quick') return it.quick;
+    if (cat.indexOf('g:') === 0) return groupOf(it) === cat.slice(2);
     if (/^p\d$/.test(cat)) return boxNow(it) === cat;
     if (cat === 'websites') return isWeb(it);
     if (cat.indexOf('co:') === 0) return isWeb(it) && it.company === cat.slice(3);
@@ -154,7 +228,8 @@
     }).sort(function (a, b) { return b.priority - a.priority || b.ts - a.ts; });
   }
   function visible(cat) {
-    return scan.filter(function (it) { return !isGone(it) && matchCat(it, cat); });
+    // page-level counts match what the list shows: mail moved into a group is only counted under that group
+    return scan.filter(function (it) { return !isGone(it) && matchCat(it, cat) && (cat.indexOf('g:') === 0 || !isMoved(it)); });
   }
 
   /* ---------- decorating Gmail's list ---------- */
@@ -168,6 +243,17 @@
         set(r, 'data-dc-quick', it.quick ? '1' : '0');
         set(r, 'data-dc-box', boxNow(it) || '');
         set(r, 'data-dc-web', isWeb(it) ? '1' : '0');
+        var grp = groupOf(it);
+        set(r, 'data-dc-group', grp);
+        set(r, 'data-dc-moved', isMoved(it) ? '1' : '0');
+        var col = rowColor(it);
+        if (r.getAttribute('data-dc-col') !== col) {
+          r.setAttribute('data-dc-col', col);
+          if (col) { r.style.setProperty('--dc-row-tint', rgba(col, 0.18)); r.style.setProperty('--dc-row-bar', col); }
+          else { r.style.removeProperty('--dc-row-tint'); r.style.removeProperty('--dc-row-bar'); }
+        }
+        set(r, 'data-dc-tint', col ? '1' : '0');
+        set(r, 'data-dc-gsel', filter.indexOf('g:') === 0 ? (grp === filter.slice(2) ? '1' : '0') : '1');
         set(r, 'data-dc-sel', filter.indexOf('co:') === 0 ? (isWeb(it) && it.company === filter.slice(3) ? '1' : '0') : '1');
         set(r, 'data-dc-gone', isGone(it) ? '1' : '0');
         var host = r.querySelector(ROW_SEL.badgeHost);
@@ -179,7 +265,8 @@
         box = el('span', { class: 'dc-badges', 'data-sig': sig },
           el('span', { class: 'dc-badge', 'data-c': it.category }, BADGE[it.category]),
           boxNow(it) ? el('span', { class: 'dc-badge dc-p', 'data-p': boxNow(it) }, boxTitle(boxNow(it), true)) : null,
-          it.quick ? el('span', { class: 'dc-badge dc-quick' }, '2 min') : null);
+          it.quick ? el('span', { class: 'dc-badge dc-quick' }, '2 min') : null,
+          el('button', { class: 'dc-pick', title: 'Choose the color of this line', 'aria-label': 'Choose line color' }));
         host.insertBefore(box, host.firstChild);
       });
       renderBar();
@@ -213,24 +300,37 @@
       main.insertBefore(bar, main.firstChild);
     }
     var companies = companyList().slice(0, 25);
-    var struct = state.pinned.join('|') + '#' + companies.map(function (c) { return c.name; }).join('|');
+    var struct = state.pinned.join('|') + '#' + companies.map(function (c) { return c.name; }).join('|') + '#' +
+      state.groups.map(function (g) { return g.id + g.name + g.color + (g.autoMove ? '1' : '0'); }).join('|');
     if (bar.getAttribute('data-struct') !== struct) {
       bar.setAttribute('data-struct', struct);
       var kids = [el('span', { class: 'dc-label' }, 'Declutter')];
-      CATS.forEach(function (c) { kids.push(chip(c.id, c.title, c.id !== 'all' && c.id !== 'quick' ? c.id : null)); });
+      CATS.filter(function (c) { return ['newsletter', 'receipt', 'notification'].indexOf(c.id) < 0; })   // groups cover these
+        .forEach(function (c) { kids.push(chip(c.id, c.title, c.id !== 'all' && c.id !== 'quick' ? c.id : null)); });
       kids.push(el('span', { class: 'dc-sep' }));
       PRIORITY.forEach(function (c) { kids.push(chip(c.id, c.title, c.id)); });
+      kids.push(el('span', { class: 'dc-sep' }));
+      kids.push(el('span', { class: 'dc-label' }, 'Groups'));
+      state.groups.forEach(function (g) {
+        var c = chip('g:' + g.id, g.name, null);
+        c.insertBefore(el('span', { class: 'dc-dot', style: 'background:' + g.color }), c.firstChild);
+        c.setAttribute('title', g.autoMove ? 'Auto-move is ON: matching emails are moved here' : 'Auto-move is OFF');
+        if (g.autoMove) c.classList.add('dc-auto');
+        kids.push(c);
+      });
       kids.push(el('span', { class: 'dc-sep' }));
       kids.push(chip('websites', 'Websites', 'websites'));
       state.pinned.forEach(function (n) { kids.push(chip('co:' + n, n, 'websites')); });
       kids.push(el('select', { class: 'dc-select', 'aria-label': 'Filter by company', onchange: function (e) { if (e.target.value) setFilter('co:' + e.target.value); } },
         [el('option', { value: '' }, 'Company…')].concat(companies.map(function (c) { return el('option', { value: c.name }, c.name); }))));
       kids.push(el('button', { class: 'dc-chip dc-bell', 'data-id': 'bell', onclick: function () { notifOpen = true; state.muteUntil = 0; save(); renderNotifs(true); } }, ''));
+      kids.push(el('button', { class: 'dc-chip dc-rules-btn', 'data-id': 'rules', onclick: openRules }, ''));
       kids.push(el('button', { class: 'dc-chip dc-board-btn', onclick: openBoard }, 'Open board ⤢'));
       bar.replaceChildren.apply(bar, kids);
     }
     bar.querySelectorAll('.dc-chip[data-id]').forEach(function (c) {
       var id = c.getAttribute('data-id');
+      if (id === 'rules') { var rt = '⚙ Rules' + (pendingSync() ? ' •' : ''); if (c.textContent !== rt) c.textContent = rt; return; }
       if (id === 'bell') { var t = '🔔 ' + waitingOnYou().length + ' waiting for you'; if (c.textContent !== t) c.textContent = t; return; }
       var pressed = String(filter === id); if (c.getAttribute('aria-pressed') !== pressed) c.setAttribute('aria-pressed', pressed);
       var n = c.querySelector('.dc-n'), v = String(visible(id).length); if (n && n.textContent !== v) n.textContent = v;
@@ -244,7 +344,7 @@
   function setFilter(id) {
     filter = id;
     if (id === 'all') document.documentElement.removeAttribute('data-dc-filter');
-    else document.documentElement.setAttribute('data-dc-filter', id.indexOf('co:') === 0 ? 'company' : id);
+    else document.documentElement.setAttribute('data-dc-filter', id.indexOf('co:') === 0 ? 'company' : id.indexOf('g:') === 0 ? 'group' : id);
     paint();
   }
 
@@ -469,7 +569,7 @@
     var q = document.getElementById('dc-q'), keep = q && document.activeElement === q;
     h.replaceChildren(
       el('h2', {}, 'Declutter board'),
-      el('div', { class: 'dc-seg', role: 'tablist' }, [['type', 'By type'], ['priority', 'By priority'], ['company', 'By company']].map(function (v) {
+      el('div', { class: 'dc-seg', role: 'tablist' }, [['type', 'By type'], ['priority', 'By priority'], ['group', 'By group'], ['company', 'By company']].map(function (v) {
         return el('button', { class: 'dc-seg-btn', role: 'tab', 'aria-selected': String(board.view === v[0]), onclick: function () { board.view = v[0]; renderBoardHead(); renderPanels(); } }, v[1]);
       })),
       el('input', { id: 'dc-q', type: 'search', placeholder: 'Search sender, subject…', value: board.q, 'aria-label': 'Search',
@@ -494,7 +594,9 @@
     wrap.setAttribute('data-view', board.view);
     if (board.view === 'company') { wrap.replaceChildren.apply(wrap, companyView()); return; }
     var defs = board.view === 'priority'
-      ? PRIORITY.map(function (x) { return { id: x.id, title: x.title, group: x.id === 'p3' }; }) : PANELS;
+      ? PRIORITY.map(function (x) { return { id: x.id, title: x.title, group: x.id === 'p3' }; })
+      : board.view === 'group' ? state.groups.map(function (g) { return { id: 'g:' + g.id, title: g.name + (g.autoMove && !state.autoPaused ? ' (auto-move on)' : ''), group: false, color: g.color }; })
+      : PANELS;
     wrap.replaceChildren.apply(wrap, defs.map(function (pn) {
       var items = pool(pn.id).filter(matches);
       var body;
@@ -509,10 +611,11 @@
           el('div', { class: 'dc-item-side' }, boxNow(it) ? el('span', { class: 'dc-badge dc-p', 'data-p': boxNow(it) }, boxTitle(boxNow(it), true)) : null,
             it.quick ? el('span', { class: 'dc-badge dc-quick' }, '2 min') : null,
             board.view === 'priority' ? el('span', { class: 'dc-badge', 'data-c': it.category }, BADGE[it.category]) : null,
+            moveSelect(it),
             el('button', { class: 'dc-btn', onclick: function () { finish(it); } }, 'Done')));
       }).concat(items.length > 150 ? [el('div', { class: 'dc-hint' }, '+ ' + (items.length - 150) + ' more. Narrow with search or age.')] : []);
       return el('section', { class: 'dc-panel', 'data-c': pn.id },
-        el('header', {}, el('span', { class: 'dc-dot', style: 'background:var(--dc-' + pn.id + ')' }), el('h3', {}, pn.title), el('span', { class: 'dc-n' }, items.length)),
+        el('header', {}, el('span', { class: 'dc-dot', style: 'background:' + (pn.color || 'var(--dc-' + pn.id + ')') }), el('h3', {}, pn.title), el('span', { class: 'dc-n' }, items.length)),
         el('div', { class: 'dc-panel-body' }, body));
     }));
   }
@@ -532,6 +635,16 @@
         el('button', { class: 'dc-btn', onclick: function () { board.results = null; board.q = ''; renderBoardHead(); renderPanels(); } }, 'Clear')),
       el('div', { class: 'dc-panel-body' }, body));
   }
+  /** Move one email to a group by hand ("Back to automatic" returns it to whatever the rules say). */
+  function moveSelect(it) {
+    var cur = groupOf(it);
+    return el('select', { class: 'dc-select dc-move', 'aria-label': 'Move to group', onchange: function (e) {
+      var v = e.target.value; if (!v) return;
+      if (v === '__auto') delete state.assign[it.key]; else state.assign[it.key] = v;
+      save(); paint(); } },
+      [el('option', { value: '' }, 'Move to…')].concat(state.groups.map(function (g) {
+        return el('option', { value: g.id }, (g.id === cur ? '✓ ' : '') + g.name); }), [el('option', { value: '__auto' }, 'Back to automatic')]));
+  }
   function emailRow(it) {
     return el('div', { class: 'dc-item' },
       el('div', { class: 'dc-item-main', onclick: function () { open(it); } },
@@ -539,6 +652,7 @@
         it.snippet ? el('small', { class: 'dc-clip' }, it.snippet) : null),
       el('div', { class: 'dc-item-side' }, boxNow(it) ? el('span', { class: 'dc-badge dc-p', 'data-p': boxNow(it) }, boxTitle(boxNow(it), true)) : null,
         el('span', { class: 'dc-badge', 'data-c': it.category }, BADGE[it.category]),
+        moveSelect(it),
         el('button', { class: 'dc-btn', onclick: function () { finish(it); } }, 'Done')));
   }
   /** Two panels: every website/company that emails you, and the emails of the selected one. */
@@ -578,29 +692,118 @@
     });
     return Object.keys(map).map(function (k) { return map[k]; }).sort(function (a, b) { return b.count - a.count; });
   }
-  function downloadFilters(skipInbox) {
-    var xml = filtersToXml(gmailFilterRules(filterCompanies(), { skipInbox: skipInbox }));
+  function exportOpts() {
+    var co = document.getElementById('dc-co'), ur = document.getElementById('dc-urg');
+    return { groups: state.groups, companies: co ? co.checked : true, urgent: ur ? ur.checked : true };
+  }
+  function pendingSync() {
+    var sig = syncSignature(state.groups);
+    return sig !== '[]' && sig !== state.exportedSig;
+  }
+  function downloadFilters() {
+    var xml = filtersToXml(gmailFilterRules(filterCompanies(), exportOpts()));
     var url = URL.createObjectURL(new Blob([xml], { type: 'application/xml' }));
     var a = el('a', { href: url, download: 'declutter-gmail-filters.xml' });
     document.body.append(a); a.click(); a.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
+    state.exportedSig = syncSignature(state.groups); save(); paint(); refreshRules();
   }
+  var SYNC_MODES = [['off', 'Declutter only (Gmail is not changed)'], ['label', 'Also label it in Gmail'], ['label-move', 'Label it in Gmail and move it out of the inbox']];
   function openExport() {
     var old = document.getElementById('dc-modal'); if (old) old.remove();
-    var rules = gmailFilterRules(filterCompanies(), {});
-    var skip = el('input', { id: 'dc-skip', type: 'checkbox' });
-    var m = el('div', { id: 'dc-modal', role: 'dialog', 'aria-label': 'Auto-sort filters' },
+    var synced = state.groups.filter(function (g) { return g.sync && g.sync !== 'off'; });
+    var n = gmailFilterRules(filterCompanies(), { groups: state.groups }).length;
+    var m = el('div', { id: 'dc-modal', role: 'dialog', 'aria-label': 'Gmail filters' },
       el('div', { class: 'dc-modal-card' },
-        el('h3', {}, 'Store new emails in categories automatically'),
-        el('p', {}, 'Declutter can only recolor what you open. Gmail filters work on every new email the moment it arrives, even when Gmail is closed. This file holds ' + rules.length + ' filters (LinkedIn, newsletters, notifications, receipts, urgent words, and ' + (rules.length - 5) + ' companies from your scan). Each one adds a Declutter/ label.'),
+        el('h3', {}, 'Make Gmail do it too'),
+        el('p', {}, 'Declutter moves emails inside this page. Gmail filters make Gmail itself label and move every new email the moment it arrives, even when Gmail is closed. They are built from your group rules.'),
+        synced.length
+          ? el('p', {}, 'Included: ' + synced.map(function (g) { return g.name + ' (' + (g.sync === 'label-move' ? 'label + move out of inbox' : 'label') + ')'; }).join(', ') + '. ' + n + ' filters in total.')
+          : el('p', { class: 'dc-warn' }, 'No group is set to sync with Gmail yet. Open Rules and choose "Also label it in Gmail" for a group first.'),
+        el('label', { class: 'dc-check' }, el('input', { id: 'dc-co', type: 'checkbox', checked: 'checked' }), 'Also label each company (Declutter/Companies/…)'),
+        el('label', { class: 'dc-check' }, el('input', { id: 'dc-urg', type: 'checkbox', checked: 'checked' }), 'Also label urgent words (Declutter/Urgent)'),
         el('ol', {}, el('li', {}, 'Click Download file.'),
           el('li', {}, 'In Gmail click the gear, then See all settings, then Filters and Blocked Addresses, then Import filters.'),
           el('li', {}, 'Choose the file, click Open file, tick Apply new filters to existing email, then Create filters.')),
-        el('label', { class: 'dc-check' }, skip, 'Also skip the inbox for newsletters and notifications (they stay in their label)'),
         el('div', { class: 'dc-actions' },
-          el('button', { class: 'dc-btn dc-primary', onclick: function () { downloadFilters(skip.checked); } }, 'Download file'),
+          el('button', { class: 'dc-btn dc-primary', onclick: downloadFilters }, 'Download file'),
           el('button', { class: 'dc-btn', onclick: function () { m.remove(); } }, 'Close'))));
     document.body.append(m);
+  }
+
+  /* ---------- rules box: per-group auto-move switch, detection rules and Gmail sync ---------- */
+  function countText(n) { return n + (n === 1 ? ' email' : ' emails'); }
+  function refreshRules() {
+    var box = document.getElementById('dc-rules'); if (!box) return;
+    state.groups.forEach(function (g) {
+      var c = box.querySelector('[data-gcount="' + g.id + '"]'); if (c) c.textContent = countText(pool('g:' + g.id).length);
+    });
+    var note = box.querySelector('.dc-pending'); if (note) note.hidden = !pendingSync();
+  }
+  function openRules() {
+    var old = document.getElementById('dc-rules'); if (old) { old.remove(); return; }
+    document.body.append(el('div', { id: 'dc-rules', role: 'dialog', 'aria-label': 'Group rules' }));
+    renderRules();
+  }
+  function switchEl(checked, onchange, label) {
+    return el('label', { class: 'dc-switch', title: label },
+      el('input', { type: 'checkbox', 'aria-label': label, checked: checked ? 'checked' : null, onchange: function (e) { onchange(e.target.checked); } }), el('span', { class: 'dc-slider' }));
+  }
+  function renderRules() {
+    var box = document.getElementById('dc-rules'); if (!box) return;
+    var scrollTop = box.firstChild ? box.firstChild.scrollTop : 0;
+    var changed = function () { save(); paint(); refreshRules(); };
+    var cards = state.groups.map(function (g) {
+      var custom = !g.builtin;
+      return el('section', { class: 'dc-rule', 'data-g': g.id },
+        el('header', {},
+          el('input', { class: 'dc-colorpick', type: 'color', value: g.color, 'aria-label': 'Color of ' + g.name, title: 'Group color', onchange: function (e) { g.color = e.target.value; changed(); } }),
+          el('input', { class: 'dc-rule-name', type: 'text', value: g.name, 'aria-label': 'Group name', onchange: function (e) { g.name = e.target.value.trim() || g.name; changed(); } }),
+          el('span', { class: 'dc-muted', 'data-gcount': g.id }, countText(pool('g:' + g.id).length)),
+          el('span', { class: 'dc-grow' }),
+          el('span', { class: 'dc-muted' }, 'Auto-move'),
+          switchEl(g.autoMove, function (v) { g.autoMove = v; changed(); }, 'Automatically move matching emails to ' + g.name)),
+        el('div', { class: 'dc-rule-body' },
+          g.builtin ? el('label', { class: 'dc-check' }, el('input', { type: 'checkbox', checked: g.useBuiltin !== false ? 'checked' : null, onchange: function (e) { g.useBuiltin = e.target.checked; changed(); } }),
+            "Use Declutter's automatic detection" + ({ subscriptions: ' (newsletters, digests, anything you can unsubscribe from)', linkedin: ' (all LinkedIn emails)', receipts: ' (receipts, invoices, bills)', notifications: ' (no-reply and notification emails)' }[g.builtin] || '')) : null,
+          el('label', {}, el('span', { class: 'dc-field' }, 'Always include these senders or websites'),
+            el('textarea', { rows: 2, placeholder: 'acme.io, news@shop.com, Dana', onchange: function (e) { g.senders = e.target.value; changed(); } }, g.senders || '')),
+          el('label', {}, el('span', { class: 'dc-field' }, 'Include emails with these words in the subject'),
+            el('textarea', { rows: 2, placeholder: 'contract, "price list"', onchange: function (e) { g.keywords = e.target.value; changed(); } }, g.keywords || '')),
+          el('label', {}, el('span', { class: 'dc-field' }, 'What Gmail does at the same time'),
+            el('select', { class: 'dc-select', onchange: function (e) { g.sync = e.target.value; changed(); } },
+              SYNC_MODES.map(function (o) { return el('option', { value: o[0], selected: g.sync === o[0] ? 'selected' : null }, o[1]); }))),
+          custom ? el('button', { class: 'dc-link', onclick: function () {
+            state.groups = state.groups.filter(function (x) { return x.id !== g.id; });
+            Object.keys(state.assign).forEach(function (k) { if (state.assign[k] === g.id) delete state.assign[k]; });
+            changed(); renderRules(); } }, 'Delete this group') : null));
+    });
+    var nameInput = el('input', { id: 'dc-newgroup', type: 'text', placeholder: 'New group, e.g. Clients', 'aria-label': 'New group name' });
+    var card = el('div', { class: 'dc-modal-card dc-rules-card' },
+      el('div', { class: 'dc-rules-head' }, el('h3', {}, 'Group rules'),
+        el('span', { class: 'dc-grow' }), el('span', { class: 'dc-muted' }, 'Auto-moving for all groups'),
+        switchEl(!state.autoPaused, function (v) { state.autoPaused = !v; changed(); }, 'Turn automatic moving on or off for every group')),
+      el('p', { class: 'dc-hint' }, 'When Auto-move is on, emails that match a group leave your main list and show up in that group (click its chip above). Turn it off and they come back. Nothing is deleted. The Gmail setting makes Gmail itself apply the label, and optionally the move, using the filter file.'),
+      el('section', { class: 'dc-rule dc-colors' },
+        el('header', {}, el('b', {}, 'Line colors'), el('span', { class: 'dc-grow' }), el('span', { class: 'dc-muted' }, 'Color every email line by'),
+          el('select', { id: 'dc-colorby', class: 'dc-select', 'aria-label': 'Color lines by', onchange: function (e) { state.colorBy = e.target.value; changed(); } },
+            [['priority', 'Priority'], ['group', 'Group'], ['off', 'Nothing']].map(function (o) { return el('option', { value: o[0], selected: state.colorBy === o[0] ? 'selected' : null }, o[1]); }))),
+        el('div', { class: 'dc-rule-body' },
+          el('div', { class: 'dc-colorgrid' }, PRIORITY.map(function (pr) {
+            return el('label', { class: 'dc-colorrow' }, el('input', { class: 'dc-colorpick', type: 'color', value: state.colors[pr.id], 'data-k': pr.id, 'aria-label': 'Color for ' + pr.title,
+              onchange: function (e) { state.colors[pr.id] = e.target.value; applyColors(); changed(); } }), pr.title); })),
+          el('p', { class: 'dc-muted' }, 'Want one email a different color? Click the small circle next to its subject in the list. It overrides these colors for that email.'))),
+      cards,
+      el('div', { class: 'dc-newrow' }, nameInput, el('button', { class: 'dc-btn', onclick: function () {
+        var name = nameInput.value.trim(); if (!name) return;
+        state.groups.push({ id: 'c' + Date.now().toString(36), name: name, color: AP_GROUP_COLORS[state.groups.length % AP_GROUP_COLORS.length], builtin: '', useBuiltin: false, senders: '', keywords: '', autoMove: false, sync: 'off' });
+        changed(); renderRules(); } }, 'Add group')),
+      el('p', { class: 'dc-pending', hidden: pendingSync() ? null : 'hidden' }, 'Gmail sync settings changed. Download and import the filter file again so Gmail does the same.'),
+      el('div', { class: 'dc-actions' },
+        el('button', { class: 'dc-btn dc-primary', onclick: openExport }, 'Gmail filters…'),
+        el('button', { class: 'dc-btn', onclick: function () { box.remove(); } }, 'Close')));
+    box.replaceChildren(card);
+    card.scrollTop = scrollTop;
   }
 
   function groupedRows(pn, items) {

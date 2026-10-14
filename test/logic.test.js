@@ -83,4 +83,33 @@ assert.strictEqual(rules.find(r => r.label === 'Declutter/Newsletters').archive,
 assert.strictEqual(L('gmailFilterRules')([], {}).find(r => r.label === 'Declutter/Newsletters').archive, false); // inbox kept by default
 const xml = L('filtersToXml')([{ from: 'a&b.com', label: 'X/Y', archive: true }]);
 assert.match(xml, /name='from' value='a&amp;b.com'/); assert.match(xml, /shouldArchive/); assert.match(xml, /<\/feed>$/);
+// groups with rules
+const G = L('defaultGroups')();
+const AG = L('assignGroup');
+const item = o => ({ key: o.key || o.subject, category: 'notification', fromEmail: 'x@y.com', fromName: 'X', company: 'Y', domain: 'y.com', subject: '', ...o });
+assert.strictEqual(AG(G, {}, item({ category: 'newsletter', subject: 'This week' })), 'subscriptions');
+assert.strictEqual(AG(G, {}, item({ category: 'notification', subject: 'Medium daily digest', fromName: 'Medium' })), 'subscriptions');
+assert.strictEqual(AG(G, {}, item({ fromEmail: 'noreply@linkedin.com', domain: 'linkedin.com', company: 'LinkedIn', subject: '805 profile views' })), 'linkedin');
+assert.strictEqual(AG(G, {}, item({ fromEmail: 'noreply@linkedin.com', domain: 'linkedin.com', company: 'LinkedIn', category: 'newsletter' })), 'linkedin'); // LinkedIn keeps its own group
+assert.strictEqual(AG(G, {}, item({ category: 'receipt', subject: 'Your bill' })), 'receipts');
+assert.strictEqual(AG(G, {}, item({ category: 'notification', subject: 'New comment' })), 'notifications');
+assert.strictEqual(AG(G, {}, item({ category: 'reply', subject: 'Weekly sync with you', fromEmail: 'p@gmail.com', domain: 'gmail.com' })), ''); // people are never subscriptions
+// custom rules + manual moves
+const custom = G.concat([{ id: 'clients', name: 'Clients', useBuiltin: false, senders: 'acme.io, Dana', keywords: 'contract, "price list"', autoMove: false, sync: 'off' }]);
+assert.strictEqual(AG(custom, {}, item({ category: 'reply', fromEmail: 'clara@acme.io', domain: 'acme.io' })), 'clients');
+assert.strictEqual(AG(custom, {}, item({ category: 'reply', fromEmail: 'z@z.com', domain: 'z.com', fromName: 'Dana Smith' })), 'clients');
+assert.strictEqual(AG(custom, {}, item({ category: 'reply', fromEmail: 'z@z.com', domain: 'z.com', subject: 'Your Price List' })), 'clients');
+assert.strictEqual(AG(custom, { k1: 'clients' }, item({ key: 'k1', category: 'newsletter' })), 'clients');           // manual move wins
+assert.strictEqual(AG(custom, { k1: 'deleted-group' }, item({ key: 'k1', category: 'newsletter' })), 'subscriptions'); // stale manual move ignored
+// Gmail sync per group
+assert.strictEqual(L('gmailFilterRules')([], { groups: G }).filter(r => r.label !== 'Declutter/Urgent').length, 0); // all sync off: nothing for Gmail
+const sg = G.map(g => ({ ...g })); sg[0].sync = 'label-move'; sg[1].sync = 'label';
+const sr = L('gmailFilterRules')([{ name: 'Acme', domain: 'acme.io', count: 4 }], { groups: sg });
+assert.ok(sr.some(r => r.label === 'Declutter/Subscriptions' && r.archive === true), 'label + move out of inbox');
+assert.ok(sr.some(r => r.label === 'Declutter/LinkedIn' && r.archive === false && r.from === 'linkedin.com'), 'label only');
+assert.ok(sr.some(r => r.label === 'Declutter/Companies/Acme'));
+assert.ok(!L('gmailFilterRules')([{ name: 'Acme', domain: 'acme.io', count: 4 }], { groups: sg, companies: false, urgent: false }).some(r => /Companies|Urgent/.test(r.label)));
+assert.ok(L('groupFilterRules')({ id: 'c', name: 'Clients', useBuiltin: false, senders: 'acme.io', keywords: 'price list', sync: 'label' }).some(r => r.subject === '"price list"'));
+assert.notStrictEqual(L('syncSignature')(G), L('syncSignature')(sg)); // changing a sync mode is detected
+assert.strictEqual(L('syncSignature')(G), L('syncSignature')(G.map(g => ({ ...g, autoMove: !g.autoMove })))); // auto-move alone does not touch Gmail
 console.log('all logic tests passed');

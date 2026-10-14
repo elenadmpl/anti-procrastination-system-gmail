@@ -39,13 +39,16 @@ const X = p => fs.readFileSync(path.join(__dirname, '..', 'extension', p), 'utf8
   // Maria 9d and Clara 10d waiting -> red; Nikos 2d -> orange; promo ends today -> orange; bill -> green
   assert.deepStrictEqual(boxes, ['p1', 'p2', 'p1', 'p3', 'p2', 'p3', 'p4', 'p3', '', 'p3']);
   const shown = async () => p.$$eval('tr.zA', rs => rs.filter(r => r.offsetParent).length);
+  // Subscriptions auto-moves by default: its 3 newsletters leave the main list (All = 10 - 3)
+  assert.strictEqual(await shown(), 7);
   await p.click('.dc-chip:has-text("Important & urgent")'); assert.strictEqual(await shown(), 2);
   await p.click('.dc-chip:has-text("Important, not urgent")'); assert.strictEqual(await shown(), 1);
-  await p.click('.dc-chip:has-text("Not important, urgent")'); assert.strictEqual(await shown(), 2);
-  await p.click('.dc-chip:has-text("Not important, not urgent")'); assert.strictEqual(await shown(), 4);
-  await p.click('.dc-chip:has-text("Websites")'); assert.strictEqual(await shown(), 6);          // every website/service email
-  await p.click('.dc-chip:has-text("LinkedIn")'); assert.strictEqual(await shown(), 1);           // pinned LinkedIn filter
-  await p.selectOption('.dc-select', 'GitHub'); assert.strictEqual(await shown(), 1);            // company drop-down
+  await p.click('.dc-chip:has-text("Not important, urgent")'); assert.strictEqual(await shown(), 1);          // promo is in Subscriptions
+  await p.click('.dc-chip:has-text("Not important, not urgent")'); assert.strictEqual(await shown(), 2);
+  await p.click('.dc-chip:has-text("Websites")'); assert.strictEqual(await shown(), 3);
+  await p.click('.dc-chip:has-text("Subscriptions")'); assert.strictEqual(await shown(), 3);                  // moved mail lives here
+  await p.click('.dc-chip:has-text("LinkedIn")'); assert.strictEqual(await shown(), 1);                         // LinkedIn group
+  await p.selectOption('.dc-select[aria-label="Filter by company"]', 'GitHub'); assert.strictEqual(await shown(), 1);
   // in-page notification: longest wait first
   assert.match(await p.textContent('#dc-notifs .dc-n-card'), /Clara is waiting for your reply/);
   assert.match(await p.textContent('#dc-notifs .dc-n-card'), /10 days/);
@@ -56,8 +59,6 @@ const X = p => fs.readFileSync(path.join(__dirname, '..', 'extension', p), 'utf8
   await p.screenshot({ path: path.join(dir, 'ext-list.png') });
   await p.click('.dc-chip:has-text("Needs reply")');
   assert.strictEqual(await p.$$eval('tr.zA', rs => rs.filter(r => r.offsetParent).length), 3);
-  await p.click('.dc-chip:has-text("Newsletters")');
-  assert.strictEqual(await p.$$eval('tr.zA', rs => rs.filter(r => r.offsetParent).length), 3);
   await p.click('.dc-chip:has-text("All")');
   await p.click('#dc-launch'); await p.waitForSelector('.dc-card');
   assert.match(await p.textContent('.dc-card h3'), /Contract draft|Quick question/); // longest-waiting first
@@ -67,6 +68,58 @@ const X = p => fs.readFileSync(path.join(__dirname, '..', 'extension', p), 'utf8
   assert.strictEqual(await p.$$eval('tr.zA[data-dc-gone="1"]', n => n.length), 1);
   await p.click('.dc-tab:has-text("Unsubscribe")'); await p.waitForSelector('.dc-row');
   await p.screenshot({ path: path.join(dir, 'ext-unsub.png') });
+  await p.click('.dc-x[aria-label="Close"]');
+  // ---- rules box: auto-move switches, custom groups, Gmail sync ----
+  await p.click('.dc-chip:has-text("All")');
+  await p.click('.dc-rules-btn'); await p.waitForSelector('#dc-rules');
+  const swSubs = '.dc-rule[data-g="subscriptions"] .dc-switch';
+  await p.click(swSubs); await p.waitForTimeout(250); assert.strictEqual(await shown(), 9, 'auto-move OFF brings the emails back (one email was marked Done earlier)');
+  await p.click(swSubs); await p.waitForTimeout(250); assert.strictEqual(await shown(), 6, 'auto-move ON moves them again');
+  await p.click('.dc-rules-head .dc-switch'); await p.waitForTimeout(250); assert.strictEqual(await shown(), 9, 'master switch pauses every group');
+  await p.click('.dc-rules-head .dc-switch'); await p.waitForTimeout(250); assert.strictEqual(await shown(), 6);
+  await p.fill('#dc-newgroup', 'Clients'); await p.click('.dc-newrow .dc-btn');
+  await p.waitForSelector('.dc-rule[data-g^="c"]');
+  await p.fill('.dc-rule[data-g^="c"] textarea >> nth=0', 'acme.io'); await p.press('.dc-rule[data-g^="c"] textarea >> nth=0', 'Tab');
+  await p.waitForTimeout(250);
+  assert.strictEqual(await p.$$eval('tr.zA[data-dc-group^="c"]', n => n.length), 1, 'custom sender rule catches Clara');
+  assert.ok(await p.$('.dc-chip:has-text("Clients")'), 'the new group gets a chip');
+  await p.click('.dc-rule[data-g^="c"] .dc-switch'); await p.waitForTimeout(250);
+  assert.strictEqual(await shown(), 5, 'auto-move works for a custom group');
+  await p.click('.dc-rule[data-g^="c"] .dc-switch'); await p.waitForTimeout(250);
+  assert.strictEqual(await shown(), 6);
+  // Gmail sync: label + move out of inbox for Subscriptions, label only for LinkedIn
+  await p.selectOption('.dc-rule[data-g="subscriptions"] select', 'label-move');
+  await p.selectOption('.dc-rule[data-g="linkedin"] select', 'label');
+  await p.waitForTimeout(200);
+  assert.match(await p.textContent('.dc-rules-btn'), /•/, 'changed sync settings are flagged');
+  await p.click('#dc-rules .dc-btn:has-text("Gmail filters")'); await p.waitForSelector('#dc-modal');
+  const [dl0] = await Promise.all([p.waitForEvent('download'), p.click('#dc-modal .dc-btn:has-text("Download file")')]);
+  const gx = fs.readFileSync(await dl0.path(), 'utf8');
+  assert.match(gx, /Declutter\/Subscriptions/); assert.match(gx, /shouldArchive/); assert.match(gx, /Declutter\/LinkedIn/);
+  await p.waitForTimeout(250);
+  assert.ok(!/•/.test(await p.textContent('.dc-rules-btn')), 'after downloading the file the flag clears');
+  await p.click('#dc-modal .dc-btn:has-text("Close")'); await p.click('#dc-rules .dc-btn:has-text("Close")');
+
+  // ---- line colors: automatic by priority or group, in colors you choose, or picked by hand ----
+  const colOf = async name => p.$$eval('tr.zA', (rs, n) => { const r = rs.find(x => x.textContent.includes(n)); return r.getAttribute('data-dc-col'); }, name);
+  assert.strictEqual(await colOf('Contract draft'), '#d93025');                       // important & urgent = red
+  await p.click('.dc-rules-btn'); await p.waitForSelector('#dc-rules');
+  await p.$eval('.dc-colorpick[data-k="p1"]', el => { el.value = '#0000ff'; el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await p.waitForTimeout(250);
+  assert.strictEqual(await colOf('Contract draft'), '#0000ff', 'you can choose the color of the important & urgent lines');
+  await p.selectOption('#dc-colorby', 'group'); await p.waitForTimeout(250);
+  assert.strictEqual(await colOf('Contract draft'), '', 'no group, no color when coloring by group');
+  assert.strictEqual(await colOf('805 profile views'), '#0a66c2', 'LinkedIn lines use the LinkedIn group color');
+  await p.selectOption('#dc-colorby', 'priority'); await p.waitForTimeout(250);
+  await p.click('#dc-rules .dc-btn:has-text("Close")');
+  // one email, picked by hand
+  await p.click('tr.zA:has-text("Dinner Saturday") .dc-pick');
+  await p.waitForSelector('#dc-pop');
+  await p.click('#dc-pop .dc-swatch[title="#8e4ec6"]');
+  assert.strictEqual(await colOf('Dinner Saturday'), '#8e4ec6', 'a picked color wins for that email');
+  assert.strictEqual(await colOf('Quick question'), '#0000ff', 'other emails keep their automatic color');
+  await p.click('tr.zA:has-text("Dinner Saturday") .dc-pick'); await p.click('#dc-pop .dc-link:has-text("Automatic")');
+  assert.strictEqual(await colOf('Dinner Saturday'), '#e8710a', 'Automatic returns to the priority color (orange)');
   assert.deepStrictEqual(errs, []);
 
   // ---- whole-inbox scan + board, on a fake inbox of 129 emails (3 pages of 50) ----
@@ -112,8 +165,9 @@ const X = p => fs.readFileSync(path.join(__dirname, '..', 'extension', p), 'utf8
   await q.screenshot({ path: path.join(dir, 'ext-filters.png') });
   const [dl] = await Promise.all([q.waitForEvent('download'), q.click('#dc-modal .dc-btn:has-text("Download file")')]);
   const xml = fs.readFileSync(await dl.path(), 'utf8');
-  assert.match(xml, /Declutter\/LinkedIn/); assert.match(xml, /Declutter\/Companies\/GitHub/); assert.match(xml, /<feed /);
-  assert.ok(!/shouldArchive/.test(xml), 'inbox is kept unless the box is ticked');
+  assert.match(await q.textContent('#dc-modal'), /No group is set to sync with Gmail/);
+  assert.match(xml, /Declutter\/Urgent/); assert.match(xml, /Declutter\/Companies\/GitHub/); assert.match(xml, /<feed /);
+  assert.ok(!/shouldArchive/.test(xml) && !/Declutter\/LinkedIn/.test(xml), 'groups set to Declutter only add nothing to Gmail');
   await q.click('#dc-modal .dc-btn:has-text("Close")');
   await q.click('.dc-seg-btn:has-text("By type")');
   // whole-mailbox search through Gmail's own search, across result pages

@@ -234,6 +234,13 @@ function companyOf(email, displayName) {
  */
 function gmailFilterRules(companies, opts) {
   opts = opts || {};
+  if (opts.groups) {                      // group-driven: only groups whose sync is on, in their chosen mode
+    var out = [];
+    opts.groups.forEach(function (g) { out = out.concat(groupFilterRules(g)); });
+    if (opts.urgent !== false) out.push({ subject: 'urgent OR "action required" OR "final notice" OR overdue OR "due today" OR "last chance"', label: 'Declutter/Urgent', archive: false });
+    if (opts.companies !== false) addCompanyRules_(out, companies);
+    return out;
+  }
   var skip = !!opts.skipInbox;
   var rules = [
     { from: 'linkedin.com', label: 'Declutter/LinkedIn', archive: false },
@@ -244,11 +251,15 @@ function gmailFilterRules(companies, opts) {
       label: 'Declutter/Receipts and Bills', archive: false },
     { subject: 'urgent OR "action required" OR "final notice" OR overdue OR "due today" OR "last chance"', label: 'Declutter/Urgent', archive: false }
   ];
+  addCompanyRules_(rules, companies);
+  return rules;
+}
+
+function addCompanyRules_(rules, companies) {
   (companies || []).filter(function (c) { return c.domain && c.count >= 3 && c.domain !== 'linkedin.com'; })
     .slice(0, 60).forEach(function (c) {
       rules.push({ from: c.domain, label: 'Declutter/Companies/' + c.name.replace(/[\/\\]/g, '-'), archive: false });
     });
-  return rules;
 }
 
 function xmlEsc_(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&apos;').replace(/"/g, '&quot;'); }
@@ -268,4 +279,89 @@ function filtersToXml(rules) {
   });
   out.push('</feed>');
   return out.join('\n');
+}
+
+/* ---------- groups with rules (Subscriptions, LinkedIn, ...) ---------- */
+
+var AP_RE_SUBSCRIPTION = /\b(newsletter|digest|weekly|monthly|subscription|subscribed|roundup|bulletin|briefing)\b/i;
+var AP_GROUP_COLORS = ['#8e4ec6', '#1a73e8', '#00897b', '#d81b60', '#6d4c41', '#546e7a', '#f9a825'];
+
+/**
+ * A group = a named bucket with rules.
+ *   builtin/useBuiltin: Declutter's own detection for that kind of mail
+ *   senders:  comma list of addresses, domains or names that always belong here
+ *   keywords: comma list of words in the subject
+ *   autoMove: matching mail is moved into the group (hidden from the main list) inside Declutter
+ *   sync:     'off' | 'label' | 'label-move'  what Gmail itself does via filters (label / label + archive)
+ */
+function defaultGroups() {
+  function g(id, name, color, builtin, autoMove) {
+    return { id: id, name: name, color: color, builtin: builtin, useBuiltin: true, senders: '', keywords: '', autoMove: autoMove, sync: 'off' };
+  }
+  return [g('subscriptions', 'Subscriptions', '#8e4ec6', 'subscriptions', true),
+    g('linkedin', 'LinkedIn', '#0a66c2', 'linkedin', false),
+    g('receipts', 'Receipts & bills', '#188038', 'receipts', false),
+    g('notifications', 'Notifications', '#5f6368', 'notifications', false)];
+}
+
+function listFromText(s) {
+  return String(s || '').split(/[,;\n]+/).map(function (x) { return x.trim().replace(/^["']+|["']+$/g, '').trim().toLowerCase(); }).filter(String);
+}
+
+/** it: {category, fromEmail, fromName, company, domain, subject} */
+function groupMatches(g, it) {
+  var category = it.category, domain = String(it.domain || '').toLowerCase();
+  var subject = String(it.subject || '').toLowerCase();
+  var auto = category !== 'reply' && category !== 'waiting';
+  if (g.useBuiltin !== false) {
+    switch (g.builtin) {
+      case 'subscriptions':
+        if (domain !== 'linkedin.com' && (category === 'newsletter' || (auto && AP_RE_SUBSCRIPTION.test(subject + ' ' + (it.fromName || ''))))) return true;
+        break;
+      case 'linkedin': if (domain === 'linkedin.com' || it.company === 'LinkedIn') return true; break;
+      case 'receipts': if (category === 'receipt') return true; break;
+      case 'notifications': if (category === 'notification') return true; break;
+    }
+  }
+  var email = String(it.fromEmail || '').toLowerCase(), host = email.split('@')[1] || '', name = String(it.fromName || '').toLowerCase();
+  var senders = listFromText(g.senders);
+  for (var i = 0; i < senders.length; i++) {
+    var s = senders[i];
+    if (email === s || host === s || host.slice(-(s.length + 1)) === '.' + s || (s.indexOf('@') < 0 && s.indexOf('.') < 0 && name.indexOf(s) >= 0)) return true;
+  }
+  var words = listFromText(g.keywords);
+  for (var j = 0; j < words.length; j++) if (subject.indexOf(words[j]) >= 0) return true;
+  return false;
+}
+
+/** The group an email belongs to: a manual move wins, otherwise the first group whose rules match. */
+function assignGroup(groups, assign, it) {
+  var forced = assign && assign[it.key];
+  if (forced && groups.some(function (g) { return g.id === forced; })) return forced;
+  for (var i = 0; i < groups.length; i++) if (groupMatches(groups[i], it)) return groups[i].id;
+  return '';
+}
+
+/** Gmail filter rules for one group, according to its sync mode. */
+function groupFilterRules(g) {
+  if (!g || g.sync === 'off' || !g.sync) return [];
+  var archive = g.sync === 'label-move';
+  var label = 'Declutter/' + String(g.name || g.id).replace(/[\/\\]/g, '-');
+  var specs = [];
+  if (g.useBuiltin !== false) {
+    if (g.builtin === 'subscriptions') specs.push({ from: 'substack.com OR mailchimpapp.com OR list-manage.com OR beehiiv.com OR convertkit.com OR sendgrid.net OR newsletter OR digest' });
+    if (g.builtin === 'linkedin') specs.push({ from: 'linkedin.com' });
+    if (g.builtin === 'receipts') specs.push({ subject: 'receipt OR invoice OR "your order" OR payment OR "your bill" OR statement', from: 'noreply OR no-reply OR billing OR orders OR invoice OR accountspayable' });
+    if (g.builtin === 'notifications') specs.push({ from: 'noreply OR no-reply OR donotreply OR notifications OR mailer-daemon' });
+  }
+  var senders = listFromText(g.senders), words = listFromText(g.keywords);
+  if (senders.length) specs.push({ from: senders.join(' OR ') });
+  if (words.length) specs.push({ subject: words.map(function (w) { return /\s/.test(w) ? '"' + w + '"' : w; }).join(' OR ') });
+  return specs.map(function (sp) { sp.label = label; sp.archive = archive; return sp; });
+}
+
+/** Changes whenever a sync setting changes, so the UI can say "re-import the filter file". */
+function syncSignature(groups) {
+  return JSON.stringify((groups || []).filter(function (g) { return g.sync && g.sync !== 'off'; })
+    .map(function (g) { return [g.id, g.name, g.sync, g.useBuiltin, g.senders, g.keywords]; }));
 }
